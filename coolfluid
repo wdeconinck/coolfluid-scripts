@@ -1,0 +1,655 @@
+#!/usr/bin/env perl
+
+#==========================================================================
+# TODO
+#==========================================================================
+# * user config file for overiding options
+
+#==========================================================================
+# Modules
+#==========================================================================
+use Term::ANSIColor;
+use Getopt::Long;
+use File::Path;
+# use File::Spec;
+use File::Copy;
+use Switch;
+use Path::Class;
+
+#==========================================================================
+# Constants
+#==========================================================================
+my $ERRORCOLOR="bold red";
+my $OKCOLOR="bold green";
+my $HEADINGCOLOR = "bold";
+my $DEBUGCOLOR = "yellow";
+my $WARNCOLOR = "bold yellow";
+
+#==========================================================================
+# Global Variables
+#==========================================================================
+
+my $home = $ENV{HOME};
+my $user = $ENV{USER};
+my $arch = get_arch();
+my $this_filename = "$home/local/bin/coolfluid";
+my $run_dir = "$home/workspace/testcases";
+my $coolfluid_executable = "";
+my $coolfluid_conf       = "";
+my $coolfluid_dir = "$home/workspace/coolfluid";
+my $remote_coolfluid_dir = "/home/willem/workspace/coolfluid";
+my $testcases_dir = "$home/workspace/testcases";
+my $remote_server = "login.scinet.utoronto.ca";
+my $port = "2200";
+
+#==========================================================================
+# Options that can be changed by user
+#==========================================================================
+my $opt_mpi_np = "1";
+my $opt_cfcase = "/Users/willem/workspace/testcases/square_2D_Re10000_FVM_LES/cases/square-2D-Re10000-develop-LES.CFcase";
+my $opt_build = "optim";
+my $opt_makeopts = "-j3";
+
+#==========================================================================
+# Actions options
+#==========================================================================
+my $opt_show_options  = 0;
+my $opt_help          = 0;
+my $opt_dry_run       = 0;
+my $opt_run           = 0;
+my $opt_config        = 0;
+my $opt_edit          = 0;
+my $opt_clean         = 0;
+my $opt_results       = 0;
+my $opt_compile       = 0;
+my $opt_inter         = 0;
+my $opt_remotesync    = 0;
+my $opt_remote_convergence    = 0;
+
+#==========================================================================
+# Command Line
+#==========================================================================
+
+sub parse_commandline() # Parse command line
+{
+    $opt_help=1 unless GetOptions (
+        'help'                  => \$opt_help,
+        'np=s'                  => \$opt_mpi_np,
+        'cfcase=s'              => \$opt_cfcase,
+        'build=s'               => \$opt_build,
+        'show-options'          => \$opt_show_options,
+        'dryrun'                => \$opt_dry_run,
+        'run'                   => \$opt_run,
+        'config'                => \$opt_config,
+        'edit'                  => \$opt_edit,
+        'clean'                 => \$opt_clean,
+        'results'               => \$opt_results,
+        'compile'               => \$opt_compile,
+        'plot'                  => \$opt_plot,
+        'inter'                 => \$opt_inter,
+        'makeopts=s'            => \$opt_makeopts,
+        'remotesync'            => \$opt_remotesync,
+        'remoteconvergence'     => \$opt_remote_convergence
+    );
+
+    # show help if required
+    if ($opt_help != 0)
+    {
+      print <<ZZZ;
+setup-coolfluid : Configures COOLFluiD run
+options:
+        --np=             Setup number of processors to use
+        --cfcase=         Setup the CFcase file location to use
+        --build=          Setup the build to use
+        --makeopts=       Options for compiling
+actions:
+        --help            Show this help.
+        --show-options    Show all options
+        --dryrun          Don't change any configuration
+        --run             Run coolfluid-solver with the configurations
+        --config          Change configuration permanently
+        --edit            Open the CFcase file
+        --clean           clean log files from run dir $run_dir
+        --results         Open the results dir
+        --plot            Plot results with tecplot
+        --remotesync      Preplot and synchronize results dir
+        --remoteconvergence get en plot convergence
+ZZZ
+    exit(0);
+    }
+    
+    if($opt_show_options) {
+        $opt_dry_run = 1;
+    }
+    
+    $opt_cfcase=File::Spec->rel2abs($opt_cfcase);
+    
+}
+
+#==========================================================================
+# Helper funcions
+#==========================================================================
+
+sub my_colored ($$)
+{
+  return ($opt_nocolor ? shift : colored($_[0], $_[1]));
+}
+
+#==========================================================================
+
+sub rm_file ($)
+{
+  my ($file) = @_;
+  unlink($file) || warn "warn: not deleting $file: $!";
+}
+
+#==========================================================================
+
+sub get_command_status($)
+{
+    my ($args)=@_;
+    print my_colored("Executing   : $args\n",$OKCOLOR);
+    unless ($opt_dry_run) {
+        my $status = system($args);
+        return $status;
+    }
+    return 0;
+}
+
+#==========================================================================
+
+sub run_command_or_die($)
+{
+    my ($args)=@_;
+    print my_colored("Executing   : $args\n",$OKCOLOR);
+    unless ($opt_dry_run) {
+        my $status = system($args);
+        print my_colored("Exit Status : $status\n",$OKCOLOR);
+        die "$args exited with error" unless $status == 0;
+    }
+}
+
+#==========================================================================
+
+sub run_command($)
+{
+    my ($args)=@_;
+    my $output;
+    # print my_colored("Executing : $args",$OKCOLOR);
+    my $command = join("",$args,"|");
+    my $pid=open READER, $command or die "Can't run the program: $args $!\n";
+    while(<READER>){
+       $output.=$_;
+    }
+    close READER;
+    # print my_colored($output,$OK_COLOR);
+    return $output;
+}
+
+#==========================================================================
+
+sub safe_chdir($)
+{
+    my ($dir)=@_;
+    print my_colored("Changing to dir $dir\n",$DEBUGCOLOR);
+    chdir($dir) or die "Cannot chdir to $dir ($!)";
+}
+
+#==========================================================================
+
+sub safe_copy($$)
+{
+    my ($orig,$targ)=@_;
+    copy ($orig,$targ) or die "Cannot copy $orig to $targ ($!)";
+}
+
+#==========================================================================
+
+sub safe_delete($)
+{
+    unlink("$_") or die "Failed to delete file $_\n";
+}
+
+#==========================================================================
+
+sub get_arch() # returns the current architecture
+{
+    my $args="uname -m";
+    my $arch = run_command($args);
+    chomp($arch);
+    return $arch;
+}
+
+#==========================================================================
+
+sub is_mac()
+{
+    my $args="uname -s";
+    my $arch = run_command($args);
+    chomp($arch);
+    if ($arch =~ Darwin) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+#==========================================================================
+
+sub print_var($$) # create a recursive dir path
+{
+    my ($var,$value)=@_;
+    print my_colored($var,$OKCOLOR); print " : ";
+    print my_colored($value,$DEBUGCOLOR); print "\n";
+}
+
+#==========================================================================
+
+sub change_config($$)
+{
+    my ($var_str,$value)=@_;
+    
+    open (IN, "+<$this_filename") or die ("file $this_filename not found\n");
+
+    @file = <IN>;
+
+    seek IN,0,0;
+
+    foreach $file (@file){
+    $file =~ s/^my\s*\$$var_str\s*=\s*\".*\"/my \$$var_str = \"$value\"/g;
+    print IN $file;
+    }
+    
+    close IN;
+}
+
+
+#==========================================================================
+
+sub parse_config_file($) # parse the config file to get the user overiding options
+{
+    my ($filename)=@_;
+    open CONFIG, "<", $filename or die ("Error opening config file $filename!\n");
+
+    while (<CONFIG>) {
+        chomp;                  # no newline
+        s/#.*//;                # no comments
+        s/^\s+//;               # no leading white
+        s/\s+$//;               # no trailing white
+        next unless length;     # anything left?
+        my ($var, $value) = split(/\s*=\s*/, $_, 2);
+        $user_pref{$var} = $value;
+    }
+
+    close CONFIG;
+}
+
+#==========================================================================
+
+sub show_options() {
+    if($opt_show_options) {
+        print_var("number of processors ",$opt_mpi_np);
+        print_var("CFcase file          ",$opt_cfcase);
+        print_var("build setting        ",$opt_build);
+    }
+}
+
+#==========================================================================
+
+sub change_build_type()
+{
+    my $filename = "$home/local/bin/coolfluid-solver";
+
+    open (IN, "+<$filename") or die ("file $filename not found\n");
+
+    if (!($opt_dry_run)) {
+        @file = <IN>;
+
+        seek IN,0,0;
+
+        foreach $file (@file){
+        $file =~ s/^BUILD_TYPE=\".*\"/BUILD_TYPE=\"$opt_build\"/g;
+        print IN $file;
+        }
+                
+    }
+    close IN;
+    print my_colored("coolfluid-solver build-type changed to $opt_build \n",$HEADINGCOLOR);
+    
+}
+
+#==========================================================================
+
+sub run()
+{
+    if ($opt_run) {
+        get_executable_from_build();
+        safe_chdir($run_dir);
+        my $command = "$coolfluid_executable --conf $coolfluid_conf --scase $opt_cfcase";
+        if ($opt_mpi_np > 1) {
+            $command = "mpirun -np $opt_mpi_np $command";
+        }
+        run_command_or_die("$command");
+    }
+
+}
+
+#==========================================================================
+
+sub config()
+{
+    if($opt_config) {
+        if(!($opt_dry_run)){
+            change_config("opt_mpi_np",$opt_mpi_np);
+            change_config("opt_build",$opt_build);
+            change_config("opt_cfcase",$opt_cfcase);
+        }
+        print my_colored("Configuration changed \n",$HEADINGCOLOR); 
+    }
+    $opt_show_options=1;
+}
+
+#==========================================================================
+
+sub get_executable_from_build()
+{
+    if ($opt_build =~ m/optim/ || $opt_build =~ m/debug/ ) {
+        $coolfluid_executable = "$home/workspace/coolfluid/builds/i386/$opt_build/src/Solver/coolfluid-solver";
+        $coolfluid_conf       = "$home/workspace/coolfluid/builds/i386/$opt_build/src/Solver/coolfluid-solver.xml";
+    }
+    elsif ($opt_build =~ m/RelWithDebInfo/ || $opt_build =~ m/Debug/) {
+        $coolfluid_executable = "$home/workspace/coolfluid/builds/i386/xcode/src/Solver/$opt_build/coolfluid-solver";
+        $coolfluid_conf       = "$home/workspace/coolfluid/builds/i386/xcode/src/Solver/coolfluid-solver.xml";
+    }
+    else {
+        print my_colored("Could not find build $opt_build \n",$ERRORCOLOR);
+    }
+}
+
+#==========================================================================
+
+sub open_cfcase()
+{
+    if($opt_edit){
+        run_command_or_die("open $opt_cfcase");
+    }
+}
+
+#==========================================================================
+
+sub clean()
+{
+    if ($opt_clean) {
+        safe_chdir($run_dir);
+        my $output;
+        $output = run_command("rm config*.log *output.log envFile* residual.dat tree.xml");
+        print my_colored("run dir cleaned \n",$HEADINGCOLOR);
+        print $output;
+    }
+}
+
+#==========================================================================
+
+sub open_result_dir()
+{
+    if ($opt_results) {
+        my $results_dir = get_parameter_from_cfcase("Simulator.Paths.ResultsDir");
+        $results_dir = "$coolfluid_dir\/$results_dir";
+        # run_command_or_die("open $results_dir");
+        run_command("osascript -e 'tell application \"Terminal\" to do script with command \"cd $results_dir; ls *.plt\"'");
+    }
+}
+
+#==========================================================================
+
+sub get_parameter_from_cfcase($)
+{
+    my ($search_parameter)=@_;
+    
+    my $filename = "$opt_cfcase";
+    my $search_value;
+    open (IN, "<$opt_cfcase") or die ("file $opt_cfcase not found\n");
+
+        @file = <IN>;
+
+        seek IN,0,0;
+
+        foreach $file (@file){
+            if( $file =~ m/^\s*$search_parameter\s*=\s*(.*)$/){
+                $search_value = $1;
+            }
+        }
+    close IN;
+    
+    if ($search_value =~ m/^$/) 
+    {
+        print my_colored("parameter $search_parameter not found in $filename \n",$ERRORCOLOR);
+    }
+    return $search_value;
+}
+
+#==========================================================================
+
+sub compile()
+{
+    if ($opt_compile) {
+        
+        if ($opt_build == "optim" || $opt_build == "debug") {
+            my $build_dir = "$home/workspace/coolfluid/builds/i386/$opt_build";
+            safe_chdir($build_dir);
+            my $output;
+            $output = run_command_or_die("make $opt_makeopts");
+            print my_colored("coolfluid compiled \n",$HEADINGCOLOR);
+            # print $output;
+        }
+    }
+}
+
+#==========================================================================
+
+sub plot()
+{
+    if ($opt_plot) {
+        my $results_dir = get_parameter_from_cfcase("Simulator.Paths.ResultsDir");
+        $results_dir = "$coolfluid_dir$results_dir";
+        
+        my $tecfile_basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
+        if ($opt_mpi_np >= 1) {
+            $tecfile_basename =~ s/\.plt/-P\*\.plt/ 
+        }
+        my $tecfiles = "$results_dir\/$tecfile_basename &";
+        print_var("tecplot: ",$tecfiles);
+        # run_command("tec360 $tecfiles");
+        safe_chdir($testcases_dir);
+        system("tec360 $tecfiles");
+        
+    }
+}
+
+sub open_interactive_file()
+{
+    if ($opt_inter) {
+        my $interactive_file = get_parameter_from_cfcase("Simulator.SubSystem.InteractiveParamReader.FileName");
+         
+        if ($interactive_file =~ m/^$/) { # empty parameter ==> not found
+            print my_colored("No interactive file defined in $opt_cfcase \n",$ERRORCOLOR);
+        }
+        else { # found
+            $interactive_file = "$coolfluid_dir\/$interactive_file";
+            run_command("mate $interactive_file");
+        }        
+    }
+}
+
+
+sub remote_sync()
+{
+    if($opt_remotesync) {
+        
+        my $tecfile_basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
+        my $tecfile_mpi = $tecfile_basename;
+        my $tecfile_binary = $tecfile_basename;
+        if ($opt_mpi_np >= 1) {
+            $tecfile_mpi =~ s/\.plt/-P\*\.plt/; 
+        }
+        $tecfile_binary =~ s/\.plt/-bin\.plt/;
+        
+        my $results_dir = get_parameter_from_cfcase("Simulator.Paths.ResultsDir");
+        my $remote_results_dir = "$remote_coolfluid_dir\/$results_dir";
+        my $local_results_dir = "$coolfluid_dir\/$results_dir";
+        
+        
+        open (MYFILE, '>transformToBinary.pl');
+        print MYFILE <<ZZZ;
+#!/usr/bin/env perl
+use Term::ANSIColor;
+#==========================================================================
+# Constants
+#==========================================================================
+my \$ERRORCOLOR="bold red";
+my \$OKCOLOR="bold green";
+my \$HEADINGCOLOR = "bold";
+my \$DEBUGCOLOR = "yellow";
+my \$WARNCOLOR = "bold yellow";
+
+#==========================================================================
+
+sub rm_file (\$)
+{
+  my (\$file) = \@_;
+  unlink(\$file) || warn "warn: not deleting \$file: \$!";
+}
+
+#==========================================================================
+
+sub safe_chdir(\$)
+{
+    my (\$dir)=\@_;
+    print colored("Changing to dir \$dir\\n",\$DEBUGCOLOR);
+    chdir(\$dir) or die "Cannot chdir to \$dir (\$!)";
+}
+
+#==========================================================================
+
+sub run_command_or_die(\$)
+{
+    my (\$args)=\@_;
+    print colored("Executing   : \$args\\n",\$OKCOLOR);
+    my \$status = system(\$args);
+    print colored("Exit Status : \$status\\n",\$OKCOLOR);
+    die "\$args exited with error" unless \$status == 0;
+}
+
+#==========================================================================
+
+safe_chdir("$remote_results_dir");
+print colored("Removing old binary: rm $tecfile_binary \\n",\$DEBUGCOLOR);
+rm_file("$tecfile_binary");
+print colored("Joining tecplot files \\n",\$DEBUGCOLOR);
+run_command_or_die("cat $tecfile_mpi > $tecfile_basename");
+print colored("Converting to binary \\n",\$DEBUGCOLOR);
+run_command_or_die("preplot $tecfile_basename $tecfile_binary");
+ZZZ
+close (MYFILE);
+
+        
+        if (!($opt_dry_run)) {
+            system("scp transformToBinary.pl $remote_server:~\n");
+            system("ssh $remote_server 'chmod 755 transformToBinary.pl; ./transformToBinary.pl'\n");
+            run_command_or_die("rsync --progress -avz  $remote_server:$remote_results_dir/$tecfile_binary $local_results_dir\n");
+            # run_command_or_die("rsync --progress -avze 'ssh -p $port' localhost:~/workspace/testcases/channel_3D_Re400_FVM_LES/results/*.plt $home/workspace/testcases/channel_3D_Re400_FVM_LES/results/");
+         
+            my $tecfile = "$results_dir\/$tecfile_binary \&";
+            print_var("tecplot: ",$tecfile);
+            safe_chdir($testcases_dir);
+            system("tec360 $tecfile\n");
+            # system("tec360 legendview.lay \&");   
+        }
+   
+    }
+}
+
+sub remote_convergence()
+{
+    if($opt_remote_convergence) {
+
+        my $tecfile_basename = get_parameter_from_cfcase("Simulator.SubSystem.BDF2.SpaceResidualFile");
+        my $tecfile_mpi = $tecfile_basename;
+        if ($opt_mpi_np >= 1) {
+            $tecfile_mpi =~ s/\.plt/-P\*\.plt/; 
+        }
+
+        my $results_dir = get_parameter_from_cfcase("Simulator.Paths.ResultsDir");
+        my $remote_results_dir = "$remote_coolfluid_dir\/$results_dir";
+        my $local_results_dir = "$coolfluid_dir\/$results_dir";
+
+        if (!($opt_dry_run)) {
+            run_command_or_die("rsync --progress -avz  $remote_server:$remote_results_dir/$tecfile_mpi $local_results_dir\n");
+            # run_command_or_die("rsync --progress -avze 'ssh -p $port' localhost:~/workspace/testcases/channel_3D_Re400_FVM_LES/results/*.plt $home/workspace/testcases/channel_3D_Re400_FVM_LES/results/");
+         
+            my $tecfile = "$results_dir\/$tecfile_mpi \&";
+            print_var("tecplot: ",$tecfile);
+            safe_chdir($testcases_dir);
+            system("tec360 $tecfile\n");
+            # system("tec360 legendview.lay \&");   
+        }
+
+
+    }
+}
+
+sub submit_job() {
+    open (MYFILE, '>submitjob.sh');
+    print MYFILE <<ZZZ;
+#!/bin/bash
+# MOAB/Torque submission script for SciNet GPC (ethernet)
+#
+#PBS -l nodes=2:ppn=8,walltime=1:00:00
+#PBS -N test
+
+# DIRECTORY TO RUN - $PBS_O_WORKDIR is directory job was submitted from
+cd $PBS_O_WORKDIR
+
+# EXECUTION COMMAND; -np = nodes*ppn
+mpirun -np 16 -hostfile $PBS_NODEFILE ./a.out
+ZZZ
+close (MYFILE);
+
+}
+
+#==========================================================================
+# Main execution
+#==========================================================================
+
+print "COOLFluiD Setup a run to use with coolfluid-run \n";
+
+parse_commandline();
+
+config();
+
+show_options();
+
+compile();
+
+clean();
+
+run();
+
+open_cfcase();
+
+open_interactive_file();
+
+open_result_dir();
+
+plot();
+
+remote_sync();
+
+remote_convergence();
+
+submit_job();
+nc();
+
+remote_convergence();
+
+submit_job();
