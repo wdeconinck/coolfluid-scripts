@@ -37,34 +37,42 @@ my $run_dir = "$home/workspace/testcases";
 my $coolfluid_executable = "";
 my $coolfluid_conf       = "";
 my $coolfluid_dir = "$home/workspace/coolfluid";
-my $remote_coolfluid_dir = "/home/willem/workspace/coolfluid";
+my $remote_coolfluid_dir = "/home/$user/workspace/coolfluid";
 my $testcases_dir = "$home/workspace/testcases";
 my $remote_server = "login.scinet.utoronto.ca";
 my $port = "2200";
-
-#==========================================================================
-# Options that can be changed by user
-#==========================================================================
-my $opt_mpi_np = "1";
-my $opt_cfcase = "/Users/willem/workspace/testcases/square_2D_Re10000_FVM_LES/cases/square-2D-Re10000-develop-LES.CFcase";
-my $opt_build = "optim";
-my $opt_makeopts = "-j3";
+my $config_file = "$home/local/scripts/.coolfluid-configuration";
 
 #==========================================================================
 # Actions options
 #==========================================================================
-my $opt_show_options  = 0;
 my $opt_help          = 0;
-my $opt_dry_run       = 0;
-my $opt_run           = 0;
-my $opt_config        = 0;
-my $opt_edit          = 0;
-my $opt_clean         = 0;
-my $opt_results       = 0;
-my $opt_compile       = 0;
+my $opt_dryrun       = 0;
 my $opt_inter         = 0;
-my $opt_remotesync    = 0;
-my $opt_remote_convergence    = 0;
+
+
+my $dcr = 0;
+my $val = 1;
+
+#==========================================================================
+# Actions
+#==========================================================================
+my $act = 0;
+my $pri = 1;
+my $fnc = 2;
+my %actionlist = (              # action   priority    function
+    "config"                => ['off', $priority++,  \&config                   ],
+    "show-options"          => ['off', $priority++,  \&show_options             ],
+    "run"                   => ['off', $priority++,  \&run                      ],
+    "edit"                  => ['off', $priority++,  \&edit                     ],
+    "clean"                 => ['off', $priority++,  \&clean                    ],
+    "results"               => ['off', $priority++,  \&results                  ],
+    "plot"                  => ['off', $priority++,  \&plot                     ],
+    "compile"               => ['off', $priority++,  \&compile                  ],
+    "remotesync"            => ['off', $priority++,  \&remotesync               ],
+    "remoteconvergence"     => ['off', $priority++,  \&remoteconvergence        ],
+    "inter"                 => ['off', $priority++,  \&open_interactive_file    ],
+);
 
 #==========================================================================
 # Command Line
@@ -74,24 +82,24 @@ sub parse_commandline() # Parse command line
 {
     $opt_help=1 unless GetOptions (
         'help'                  => \$opt_help,
-        'np=s'                  => \$opt_mpi_np,
-        'cfcase=s'              => \$opt_cfcase,
-        'build=s'               => \$opt_build,
-        'show-options'          => \$opt_show_options,
-        'dryrun'                => \$opt_dry_run,
-        'run'                   => \$opt_run,
-        'config'                => \$opt_config,
-        'edit'                  => \$opt_edit,
-        'clean'                 => \$opt_clean,
-        'results'               => \$opt_results,
-        'compile'               => \$opt_compile,
-        'plot'                  => \$opt_plot,
-        'inter'                 => \$opt_inter,
-        'makeopts=s'            => \$opt_makeopts,
-        'remotesync'            => \$opt_remotesync,
-        'remoteconvergence'     => \$opt_remote_convergence
+        'np=s'                  => sub { $user_pref{"mpi_np"}[$val] = "$_[1]"; },
+        'cfcase=s'              => sub { $user_pref{"cfcase"}[$val] = "\"$_[1]\""; },
+        'build=s'               => sub { $user_pref{"build"}[$val] = "$_[1]"; },
+        'show-options'          => sub { $actionlist{'show-options'}[$act]='on'; },
+        'run'                   => sub { $actionlist{'run'}[$act]='on'; },
+        'config'                => sub { $actionlist{'config'}[$act]='on'; },
+        'edit'                  => sub { $actionlist{'edit'}[$act]='on'; },
+        'clean'                 => sub { $actionlist{'clean'}[$act]='on'; },
+        'results'               => sub { $actionlist{'results'}[$act]='on'; },
+        'compile'               => sub { $actionlist{'compile'}[$act]='on'; },
+        'plot'                  => sub { $actionlist{'plot'}[$act]='on'; },
+        'inter'                 => sub { $actionlist{'inter'}[$act]='on'; },
+        'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
+        'remotesync'            => sub { $actionlist{'remotesync'}[$act]='on'; },
+        'remoteconvergence'     => sub { $actionlist{'remoteconvergence'}[$act]='on'; },
+        'dryrun'                => \$opt_dryrun,
     );
-
+    
     # show help if required
     if ($opt_help != 0)
     {
@@ -119,7 +127,7 @@ ZZZ
     }
     
     if($opt_show_options) {
-        $opt_dry_run = 1;
+        $opt_dryrun = 1;
     }
     
     $opt_cfcase=File::Spec->rel2abs($opt_cfcase);
@@ -149,7 +157,7 @@ sub get_command_status($)
 {
     my ($args)=@_;
     print my_colored("Executing   : $args\n",$OKCOLOR);
-    unless ($opt_dry_run) {
+    unless ($opt_dryrun) {
         my $status = system($args);
         return $status;
     }
@@ -162,7 +170,7 @@ sub run_command_or_die($)
 {
     my ($args)=@_;
     print my_colored("Executing   : $args\n",$OKCOLOR);
-    unless ($opt_dry_run) {
+    unless ($opt_dryrun) {
         my $status = system($args);
         print my_colored("Exit Status : $status\n",$OKCOLOR);
         die "$args exited with error" unless $status == 0;
@@ -249,18 +257,19 @@ sub change_config($$)
 {
     my ($var_str,$value)=@_;
     
-    open (IN, "+<$this_filename") or die ("file $this_filename not found\n");
+    open (IN, "+<$config_file") or die ("file $config_file not found\n");
 
     @file = <IN>;
 
     seek IN,0,0;
 
     foreach $file (@file){
-    $file =~ s/^my\s*\$$var_str\s*=\s*\".*\"/my \$$var_str = \"$value\"/g;
+    $file =~ s/^\s*$var_str\s*=\s*\".*\"/$var_str = \"$value\"/g;
     print IN $file;
     }
     
     close IN;
+    
 }
 
 
@@ -277,8 +286,9 @@ sub parse_config_file($) # parse the config file to get the user overiding optio
         s/^\s+//;               # no leading white
         s/\s+$//;               # no trailing white
         next unless length;     # anything left?
-        my ($var, $value) = split(/\s*=\s*/, $_, 2);
-        $user_pref{$var} = $value;
+        
+        my ($var, $description, $value) = split(/\s*[=|]\s*/, $_, 3);
+        $user_pref{$var} = [$description,$value];
     }
 
     close CONFIG;
@@ -287,10 +297,8 @@ sub parse_config_file($) # parse the config file to get the user overiding optio
 #==========================================================================
 
 sub show_options() {
-    if($opt_show_options) {
-        print_var("number of processors ",$opt_mpi_np);
-        print_var("CFcase file          ",$opt_cfcase);
-        print_var("build setting        ",$opt_build);
+    foreach $var (keys %user_pref) {
+        print_var($user_pref{$var}[$dcr],$user_pref{$var}[$val]);
     }
 }
 
@@ -302,7 +310,7 @@ sub change_build_type()
 
     open (IN, "+<$filename") or die ("file $filename not found\n");
 
-    if (!($opt_dry_run)) {
+    if (!($opt_dryrun)) {
         @file = <IN>;
 
         seek IN,0,0;
@@ -320,39 +328,45 @@ sub change_build_type()
 
 #==========================================================================
 
+sub pref($)
+{
+    my ($var) = @_;
+    return $user_pref{$var}[$val];
+}
+
+#==========================================================================
+
 sub run()
 {
-    if ($opt_run) {
         get_executable_from_build();
-        safe_chdir($run_dir);
-        my $command = "$coolfluid_executable --conf $coolfluid_conf --scase $opt_cfcase";
-        if ($opt_mpi_np > 1) {
-            $command = "mpirun -np $opt_mpi_np $command";
+        safe_chdir(get_results_dir());
+        my $command = "$coolfluid_executable --conf $coolfluid_conf --scase ".pref('cfcase');
+        if (pref('mpi_np') > 1) {
+            $command = "mpirun -np ".pref('mpi_np')." $command";
         }
         run_command_or_die("$command");
-    }
 
 }
 
 #==========================================================================
 
 sub config()
-{
-    if($opt_config) {
-        if(!($opt_dry_run)){
-            change_config("opt_mpi_np",$opt_mpi_np);
-            change_config("opt_build",$opt_build);
-            change_config("opt_cfcase",$opt_cfcase);
-        }
-        print my_colored("Configuration changed \n",$HEADINGCOLOR); 
+{    
+    rm_file($config_file);
+    open (OUT, ">$config_file") or die ("file $config_file not found\n");
+
+    foreach $var (keys %user_pref) {
+        print OUT "$var \| $user_pref{$var}[$dcr] = $user_pref{$var}[$val]\n";
     }
-    $opt_show_options=1;
+    close OUT;
+    print my_colored("Configuration changed in $config_file \n",$HEADINGCOLOR); 
 }
 
 #==========================================================================
 
 sub get_executable_from_build()
 {
+    my $opt_build = pref("build");
     if ($opt_build =~ m/optim/ || $opt_build =~ m/debug/ ) {
         $coolfluid_executable = "$home/workspace/coolfluid/builds/i386/$opt_build/src/Solver/coolfluid-solver";
         $coolfluid_conf       = "$home/workspace/coolfluid/builds/i386/$opt_build/src/Solver/coolfluid-solver.xml";
@@ -371,7 +385,7 @@ sub get_executable_from_build()
 sub open_cfcase()
 {
     if($opt_edit){
-        run_command_or_die("open $opt_cfcase");
+        run_command_or_die("open ".pref("cfcase"));
     }
 }
 
@@ -406,9 +420,9 @@ sub get_parameter_from_cfcase($)
 {
     my ($search_parameter)=@_;
     
-    my $filename = "$opt_cfcase";
+    my $filename = pref("cfcase");
     my $search_value;
-    open (IN, "<$opt_cfcase") or die ("file $opt_cfcase not found\n");
+    open (IN, "<$filename") or die ("file $filename not found\n");
 
         @file = <IN>;
 
@@ -431,17 +445,13 @@ sub get_parameter_from_cfcase($)
 #==========================================================================
 
 sub compile()
-{
-    if ($opt_compile) {
-        
-        if ($opt_build == "optim" || $opt_build == "debug") {
-            my $build_dir = "$home/workspace/coolfluid/builds/i386/$opt_build";
-            safe_chdir($build_dir);
-            my $output;
-            $output = run_command_or_die("make $opt_makeopts");
-            print my_colored("coolfluid compiled \n",$HEADINGCOLOR);
-            # print $output;
-        }
+{        
+    if ($opt_build == "optim" || $opt_build == "debug") {
+        my $build_dir = "$home/workspace/coolfluid/builds/i386/$user_pref{'build'}[$val]";
+        safe_chdir($build_dir);
+        my $output;
+        $output = run_command_or_die("make $user_pref{'makeopts'}[$val] $user_pref{'mpi_np'}[$val]");
+        print my_colored("coolfluid compiled \n",$HEADINGCOLOR);
     }
 }
 
@@ -553,7 +563,7 @@ ZZZ
 close (MYFILE);
 
         
-        if (!($opt_dry_run)) {
+        if (!($opt_dryrun)) {
             system("scp transformToBinary.pl $remote_server:~\n");
             system("ssh $remote_server 'chmod 755 transformToBinary.pl; ./transformToBinary.pl'\n");
             run_command_or_die("rsync --progress -avz  $remote_server:$remote_results_dir/$tecfile_binary $local_results_dir\n");
@@ -583,7 +593,7 @@ sub remote_convergence()
         my $remote_results_dir = "$remote_coolfluid_dir\/$results_dir";
         my $local_results_dir = "$coolfluid_dir\/$results_dir";
 
-        if (!($opt_dry_run)) {
+        if (!($opt_dryrun)) {
             run_command_or_die("rsync --progress -avz  $remote_server:$remote_results_dir/$tecfile_mpi $local_results_dir\n");
             # run_command_or_die("rsync --progress -avze 'ssh -p $port' localhost:~/workspace/testcases/channel_3D_Re400_FVM_LES/results/*.plt $home/workspace/testcases/channel_3D_Re400_FVM_LES/results/");
          
@@ -618,38 +628,86 @@ close (MYFILE);
 }
 
 #==========================================================================
+
+sub get_results_dir() {
+    my $results_dir = get_parameter_from_cfcase("Simulator.Paths.ResultsDir");
+    $results_dir="$coolfluid_dir$results_dir";
+    return $results_dir;
+}
+
+#==========================================================================
+
+sub setup() {
+    
+    # if ($user_pref{'makeopts'}[$val] =~ m/\"\"/i) 
+    # {
+    #     $user_pref{'makeopts'}[$val] = "-j$user_pref{'mpi_np'}[$val]";
+    # } 
+    # else {
+    #     $user_pref{'makeopts'}[$val] = "$user_pref{'makeopts'}[$val] -j$user_pref{'mpi_np'}[$val]";        
+    # }
+
+}
+
+#==========================================================================
 # Main execution
 #==========================================================================
 
 print "COOLFluiD Setup a run to use with coolfluid-run \n";
 
+parse_config_file($config_file);
 parse_commandline();
+setup();
 
-config();
+# sort the packages to install by priority
+my %actionsTodo = ();
+foreach $action (keys %actionlist) {
+    if ($actionlist{$action}[$act] eq 'on') {
+        $actionsTodo{$actionlist{$action}[$pri]} = $action;
+    }
+}
 
-show_options();
+foreach $p (sort {$a <=> $b} keys %actionsTodo) {
+    my $action = $actionsTodo{$p};
+    print my_colored("Action: $action\n",$ERRORCOLOR);
+    unless ($opt_dryrun)
+    {
+      $actionlist{$action}[$fnc]->();
+    }
+}
+# 
+# foreach $action (keys %actionsTodo)
+# {
+#         print "action = $actionsTodo{$actionlist{$action}[$pri]}\n";
+#         unless ($opt_dryrun) {
+#             $actionlist{$action}[$fnc]->();
+#         }
+# }
 
-compile();
-
-clean();
-
-run();
-
-open_cfcase();
-
-open_interactive_file();
-
-open_result_dir();
-
-plot();
-
-remote_sync();
-
-remote_convergence();
-
-submit_job();
-nc();
-
-remote_convergence();
-
-submit_job();
+# config();
+# 
+# show_options();
+# 
+# compile();
+# 
+# clean();
+# 
+# run();
+# 
+# open_cfcase();
+# 
+# open_interactive_file();
+# 
+# open_result_dir();
+# 
+# plot();
+# 
+# remote_sync();
+# 
+# remote_convergence();
+# 
+# submit_job();
+# 
+# remote_convergence();
+# 
+# submit_job();
