@@ -73,6 +73,7 @@ my %actionlist = (              # action   priority    function
     "remoteconvergence"     => ['off', $priority++,  \&remoteconvergence        ],
     "inter"                 => ['off', $priority++,  \&open_interactive_file    ],
     "cat"                   => ['off', $priority++,  \&cat                      ],
+    "merge"                 => ['off', $priority++,  \&merge                    ],
 );
 
 #==========================================================================
@@ -96,6 +97,7 @@ sub parse_commandline() # Parse command line
         'plot'                  => sub { $actionlist{'plot'}[$act]='on'; },
         'inter'                 => sub { $actionlist{'inter'}[$act]='on'; },
         'cat'                   => sub { $actionlist{'cat'}[$act]='on'; },
+        'merge'                   => sub { $actionlist{'merge'}[$act]='on'; },
         'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
         'remotesync'            => sub { $actionlist{'remotesync'}[$act]='on'; },
         'remoteconvergence'     => sub { $actionlist{'remoteconvergence'}[$act]='on'; },
@@ -634,7 +636,50 @@ sub get_results_dir() {
 
 sub cat() 
 {
+    use Cwd;
+    use File::Find;
     
+    
+    chdir(get_results_dir());
+    my $dir = getcwd;
+    
+    my @files = ();
+
+    my $basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
+    $basename =~ s/\.plt//;
+
+    my @files = ();
+
+    print "looking for files with basename $basename in $dir\n";
+    
+    find(sub {push @files, $File::Find::name if(/$basename-P0.*/);} ,"$dir"); #custom subroutine find, parse $dir
+
+    print "files = @files";
+    foreach (@files) {
+        print "$_";
+        my $catname = $_;
+        my $globname = $_;
+        $globname =~ s/-P0/-P\*/;
+        $catname =~ s/-P0//;
+        system("cat $globname > $catname");
+        system("rm $globname");
+    }
+}
+
+sub merge() 
+{
+    use Cwd;
+    use File::Find;
+    
+    chdir(get_results_dir());
+    my $dir = getcwd;
+    
+    my $basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
+    $basename =~ s/\.plt//;
+    
+    my $catname = "$basename-merged-time.plt";
+    my $globname = "$basename-time_*.plt";
+    run_command_or_die("cat $globname > $catname");
 }
 
 #==========================================================================
