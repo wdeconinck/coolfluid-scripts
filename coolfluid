@@ -72,6 +72,7 @@ my %actionlist = (              # action   priority    function
     "remotesync"            => ['off', $priority++,  \&remotesync               ],
     "remoteconvergence"     => ['off', $priority++,  \&remoteconvergence        ],
     "inter"                 => ['off', $priority++,  \&open_interactive_file    ],
+    "cat"                   => ['off', $priority++,  \&cat                      ],
 );
 
 #==========================================================================
@@ -83,7 +84,7 @@ sub parse_commandline() # Parse command line
     $opt_help=1 unless GetOptions (
         'help'                  => \$opt_help,
         'np=s'                  => sub { $user_pref{"mpi_np"}[$val] = "$_[1]"; },
-        'cfcase=s'              => sub { $user_pref{"cfcase"}[$val] = "\"$_[1]\""; },
+        'cfcase=s'              => sub { $user_pref{"cfcase"}[$val] = "$_[1]"; },
         'build=s'               => sub { $user_pref{"build"}[$val] = "$_[1]"; },
         'show-options'          => sub { $actionlist{'show-options'}[$act]='on'; },
         'run'                   => sub { $actionlist{'run'}[$act]='on'; },
@@ -94,6 +95,7 @@ sub parse_commandline() # Parse command line
         'compile'               => sub { $actionlist{'compile'}[$act]='on'; },
         'plot'                  => sub { $actionlist{'plot'}[$act]='on'; },
         'inter'                 => sub { $actionlist{'inter'}[$act]='on'; },
+        'cat'                   => sub { $actionlist{'cat'}[$act]='on'; },
         'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
         'remotesync'            => sub { $actionlist{'remotesync'}[$act]='on'; },
         'remoteconvergence'     => sub { $actionlist{'remoteconvergence'}[$act]='on'; },
@@ -125,13 +127,6 @@ actions:
 ZZZ
     exit(0);
     }
-    
-    if($opt_show_options) {
-        $opt_dryrun = 1;
-    }
-    
-    $opt_cfcase=File::Spec->rel2abs($opt_cfcase);
-    
 }
 
 #==========================================================================
@@ -637,16 +632,16 @@ sub get_results_dir() {
 
 #==========================================================================
 
-sub setup() {
+sub cat() 
+{
     
-    # if ($user_pref{'makeopts'}[$val] =~ m/\"\"/i) 
-    # {
-    #     $user_pref{'makeopts'}[$val] = "-j$user_pref{'mpi_np'}[$val]";
-    # } 
-    # else {
-    #     $user_pref{'makeopts'}[$val] = "$user_pref{'makeopts'}[$val] -j$user_pref{'mpi_np'}[$val]";        
-    # }
+}
 
+#==========================================================================
+
+sub setup() 
+{
+    $user_pref{'cfcase'}[$val]=File::Spec->rel2abs($user_pref{'cfcase'}[$val]);
 }
 
 #==========================================================================
@@ -675,39 +670,4 @@ foreach $p (sort {$a <=> $b} keys %actionsTodo) {
       $actionlist{$action}[$fnc]->();
     }
 }
-# 
-# foreach $action (keys %actionsTodo)
-# {
-#         print "action = $actionsTodo{$actionlist{$action}[$pri]}\n";
-#         unless ($opt_dryrun) {
-#             $actionlist{$action}[$fnc]->();
-#         }
-# }
 
-# config();
-# 
-# show_options();
-# 
-# compile();
-# 
-# clean();
-# 
-# run();
-# 
-# open_cfcase();
-# 
-# open_interactive_file();
-# 
-# open_result_dir();
-# 
-# plot();
-# 
-# remote_sync();
-# 
-# remote_convergence();
-# 
-# submit_job();
-# 
-# remote_convergence();
-# 
-# submit_job();
