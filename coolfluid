@@ -14,7 +14,7 @@ use File::Path;
 # use File::Spec;
 use File::Copy;
 use Switch;
-use Path::Class;
+# use Path::Class;
 
 #==========================================================================
 # Constants
