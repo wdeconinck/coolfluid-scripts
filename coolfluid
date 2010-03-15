@@ -353,12 +353,12 @@ sub get_executable_from_build()
 {
     my $opt_build = pref("build");
     if ($opt_build =~ m/optim/ || $opt_build =~ m/debug/ ) {
-        $coolfluid_executable = "$home/workspace/coolfluid/builds/i386/$opt_build/src/Solver/coolfluid-solver";
-        $coolfluid_conf       = "$home/workspace/coolfluid/builds/i386/$opt_build/src/Solver/coolfluid-solver.xml";
+        $coolfluid_executable = "$home/workspace/coolfluid/builds/$arch/$opt_build/src/Solver/coolfluid-solver";
+        $coolfluid_conf       = "$home/workspace/coolfluid/builds/$arch/$opt_build/src/Solver/coolfluid-solver.xml";
     }
     elsif ($opt_build =~ m/RelWithDebInfo/ || $opt_build =~ m/Debug/) {
-        $coolfluid_executable = "$home/workspace/coolfluid/builds/i386/xcode/src/Solver/$opt_build/coolfluid-solver";
-        $coolfluid_conf       = "$home/workspace/coolfluid/builds/i386/xcode/src/Solver/coolfluid-solver.xml";
+        $coolfluid_executable = "$home/workspace/coolfluid/builds/$arch/xcode/src/Solver/$opt_build/coolfluid-solver";
+        $coolfluid_conf       = "$home/workspace/coolfluid/builds/$arch/xcode/src/Solver/coolfluid-solver.xml";
     }
     else {
         print my_colored("Could not find build $opt_build \n",$ERRORCOLOR);
@@ -441,7 +441,7 @@ sub get_parameter_from_cfcase($)
 sub compile()
 {        
     if ($opt_build == "optim" || $opt_build == "debug") {
-        my $build_dir = "$home/workspace/coolfluid/builds/i386/$user_pref{'build'}[$val]";
+        my $build_dir = "$home/workspace/coolfluid/builds/$arch/$user_pref{'build'}[$val]";
         safe_chdir($build_dir);
         my $output;
         $output = run_command_or_die("make $user_pref{'makeopts'}[$val] $user_pref{'mpi_np'}[$val]");
