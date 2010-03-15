@@ -80,6 +80,7 @@ my %actionlist = (              # action   priority    function
     "edit"                  => ['off', $priority++,  \&open_cfcase              ],
     "residual"              => ['off', $priority++,  \&plot_residual            ],
     "upload"                => ['off', $priority++,  \&sync_working_dir         ],
+    "submit"                => ['off', $priority++,  \&submit                   ],
 );
 
 #==========================================================================
@@ -96,6 +97,7 @@ sub parse_commandline() # Parse command line
         'show-options'          => sub { $actionlist{'show-options'}[$act]='on'; },
         'upload'                => sub { $actionlist{'upload'}[$act]='on'; },
         'run'                   => sub { $actionlist{'run'}[$act]='on'; },
+        'submit'                => sub { $actionlist{'submit'}[$act]='on'; },
         'restart'               => sub { $actionlist{'restart'}[$act]='on'; },
         'config'                => sub { $actionlist{'config'}[$act]='on'; },
         'edit'                  => sub { $actionlist{'edit'}[$act]='on'; },
@@ -870,6 +872,91 @@ sub get_cases_dir()
 sub setup() 
 {
     $user_pref{'cfcase'}[$val]=File::Spec->rel2abs($user_pref{'cfcase'}[$val]);
+}
+
+#==========================================================================
+
+sub submit()
+{
+    my $cfcase_filename;
+    
+    my $opt_walltime="48:00:00";
+    my $opt_notify = 1;
+    my $opt_infiniband = 1;
+    
+    
+    if ($opt_notify) {
+        if (pref('cfcase') =~ m:.*/([\w\-]+\.CFcase)$:) {
+            $cfcase_filename = $1;
+        }
+    }
+    
+    my $nbNodes = $opt_mpi_np / 8;
+    my $ib = "";
+    if($opt_infiniband) {$ib = ":ib"}
+    
+    safe_chdir("$testcases_dir\/coolfluidlogs");
+    open (MYFILE, '>submitjob.sh');
+    print MYFILE <<ZZZ;
+#!/bin/bash
+# MOAB/Torque submission script for SciNet GPC (ethernet)
+#
+#PBS -l nodes=$nbNodes$ib:ppn=8,walltime=$opt_walltime
+#PBS -N coolfluid
+ZZZ
+    close (MYFILE);
+
+    if ($opt_notify) {
+        open (MYFILE, '>>submitjob.sh');
+        print MYFILE <<ZZZ;
+
+# SEND NOTIFICATION ON START
+ssh gpc02 "$home/local/bin/prowl.sh 0 'started on scinet' '$cfcase_filename'"
+ZZZ
+        close (MYFILE);
+    }
+    
+    open (MYFILE, '>>submitjob.sh');
+    print MYFILE <<ZZZ;
+        
+# DIRECTORY TO RUN - \$PBS_O_WORKDIR is directory job was submitted from
+cd \$PBS_O_WORKDIR
+
+# EXECUTION COMMAND; -np = nodes*ppn
+coolfluid --run --no-output --np=$opt_mpi_np --optmpiflags="-hostfile \$PBS_NODE
+FILE" --cfcase=$opt_cfcase
+ZZZ
+    close (MYFILE);
+
+    if ($opt_notify) {
+        open (MYFILE, '>>submitjob.sh');
+        print MYFILE <<ZZZ;
+
+# SEND NOTIFICATION ON END
+ssh gpc02 "$home/local/bin/prowl.sh 0 'stopped on scinet' '$cfcase_filename'"
+ZZZ
+        close (MYFILE);
+    }
+
+     if ($opt_notify) {
+         # Don't notify again when submitting.
+         $opt_notify = 0;
+    }
+
+    if(!($opt_dryrun)) {
+        safe_chdir("$testcases_dir\/coolfluidlogs");
+        $lastJobID = run_command("qsub submitjob.sh");
+        print "last submitted job ID = $lastJobID \n";
+        if ($lastJobID =~ m/([0-9]+)\../) {
+            $lastJobID = $1;
+            #$user_pref{'lastJobID'}=$lastJobID;
+            
+            #change_config("lastJobID",$lastJobID);
+            print "jobID = $lastJobID \n";
+        }
+        
+    }
+    
 }
 
 #==========================================================================
