@@ -74,6 +74,7 @@ my %actionlist = (              # action   priority    function
     "inter"                 => ['off', $priority++,  \&open_interactive_file    ],
     "cat"                   => ['off', $priority++,  \&cat                      ],
     "merge"                 => ['off', $priority++,  \&merge                    ],
+    "merge-interval"        => ['off', $priority++,  \&merge_interval           ],
     "edit"                  => ['off', $priority++,  \&open_cfcase              ],
     "residual"              => ['off', $priority++,  \&plot_residual            ],
     "upload"                => ['off', $priority++,  \&sync_working_dir         ],
@@ -102,6 +103,7 @@ sub parse_commandline() # Parse command line
         'inter'                 => sub { $actionlist{'inter'}[$act]='on'; },
         'cat'                   => sub { $actionlist{'cat'}[$act]='on'; },
         'merge'                 => sub { $actionlist{'merge'}[$act]='on'; },
+        'merge-interval=s'      => sub { $actionlist{'merge-interval'}[$act]='on'; $user_pref{"interval"}[$val] = "$_[1]"; },
         'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
         'remotesync'            => sub { $actionlist{'remotesync'}[$act]='on'; },
         'remoteconvergence'     => sub { $actionlist{'remoteconvergence'}[$act]='on'; },
@@ -686,7 +688,6 @@ sub cat()
     
     find(sub {push @files, $File::Find::name if(/$basename-P0.*/);} ,"$dir"); #custom subroutine find, parse $dir
 
-    print "files = @files";
     foreach (@files) {
         print "$_";
         my $catname = $_;
@@ -724,6 +725,76 @@ sub merge()
         my $globname = "$basename-iter_*.plt";
         run_command_or_die("cat $globname > $catname");
     }
+}
+
+#==========================================================================
+
+sub merge_interval() 
+{
+    use Cwd;
+    use File::Find;
+    
+    chdir(get_results_dir());
+    my $dir = getcwd;
+    
+    my $basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
+    $basename =~ s/\.plt//;
+    
+    my @files = (); 
+    my %timeHash = ();
+    find(\&find_files,"$dir"); #custom subroutine find, parse $dir
+
+    # following gets called recursively for each file in $dir, check $_ to see if you want the file!
+    sub find_files()
+    {
+        if ($_ =~ m/time_([0-9]+)_?([0-9]+)?_?(e?)(-?)([0-9]+)?(.*\.plt)$/) {
+            $time = get_time_from_filename($_);
+            $timeHash{$time} = $_;
+
+        }
+    }
+    
+    
+    # get the selection
+    my $interval = pref('interval');
+    
+    # sort and select timeHash
+    my $count = 0;
+    foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
+        if ($count*$interval <= $time && ($count+1)*$interval > $time) {
+            push @files , $timeHash{$time};
+            $count++;
+        }
+    }
+        
+    # Total from which percentage will be calculated
+    $cnt = @files;
+
+    $|=1;
+    $i=0;
+
+    my $catname = "$basename-merged-time-$interval.plt";
+    system("echo '' > $catname\n");
+    foreach (@files) {
+        # Calculate Percentage
+    	$percent = ($i/$cnt)*100;		
+
+        # Print Progress
+    	for($k=0;$k<$percent;$k=$k+5)
+    	{
+    		print "|";						
+    	}
+    	print " <-- $percent% Complete --> ";
+
+        # Goto the start of the line
+    	print "\r";
+        system("cat $_ >> $catname\n");
+        # system("rm $globname");
+        $i++;
+    }
+    print ">>>>>>>>>>>>---------100% Complete---------<<<<<<<<<<<<\n";
+    
+    
 }
 
 #==========================================================================
