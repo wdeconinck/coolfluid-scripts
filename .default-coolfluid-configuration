@@ -1,0 +1,5 @@
+makeopts | make options = "all"
+build | build = optim
+remote | remote = 0
+cfcase | case file =  
+mpi_np | number of processors = 1

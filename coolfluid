@@ -281,6 +281,12 @@ sub change_config($$)
 sub parse_config_file($) # parse the config file to get the user overiding options
 {
     my ($filename)=@_;
+    
+    if (!(-e $filename))
+    { 
+        safe_copy("$home/local/scripts/.default-coolfluid-configuration",$filename);
+    } 
+    
     open CONFIG, "<", $filename or die ("Error opening config file $filename!\n");
 
     while (<CONFIG>) {
