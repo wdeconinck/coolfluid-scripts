@@ -42,6 +42,7 @@ my $testcases_dir = "$home/workspace/testcases";
 my $remote_server = "login.scinet.utoronto.ca";
 my $port = "2200";
 my $config_file = "$home/local/scripts/.coolfluid-configuration";
+my $done_cat = 0;
 
 #==========================================================================
 # Actions options
@@ -63,6 +64,7 @@ my $fnc = 2;
 my %actionlist = (              # action   priority    function
     "config"                => ['off', $priority++,  \&config                   ],
     "show-options"          => ['off', $priority++,  \&show_options             ],
+    "restart"               => ['off', $priority++,  \&prepare_restart          ],
     "run"                   => ['off', $priority++,  \&run                      ],
     "edit"                  => ['off', $priority++,  \&edit                     ],
     "clean"                 => ['off', $priority++,  \&clean                    ],
@@ -94,6 +96,7 @@ sub parse_commandline() # Parse command line
         'show-options'          => sub { $actionlist{'show-options'}[$act]='on'; },
         'upload'                => sub { $actionlist{'upload'}[$act]='on'; },
         'run'                   => sub { $actionlist{'run'}[$act]='on'; },
+        'restart'               => sub { $actionlist{'restart'}[$act]='on'; },
         'config'                => sub { $actionlist{'config'}[$act]='on'; },
         'edit'                  => sub { $actionlist{'edit'}[$act]='on'; },
         'clean'                 => sub { $actionlist{'clean'}[$act]='on'; },
@@ -455,22 +458,21 @@ sub compile()
 
 sub plot()
 {
-    if ($opt_plot) {
-        my $results_dir = get_results_dir();
-        $results_dir = "$coolfluid_dir$results_dir";
-        
-        my $tecfile_basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
-        if ($opt_mpi_np >= 1) {
-            $tecfile_basename =~ s/\.plt/-P\*\.plt/ 
-        }
-        my $tecfiles = "$results_dir\/$tecfile_basename &";
-        print_var("tecplot: ",$tecfiles);
-        # run_command("tec360 $tecfiles");
-        safe_chdir($testcases_dir);
-        system("tec360 $tecfiles");
-        
-    }
+    my $tecfile_basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
+    $tecfile_basename =~ s/\.plt//;
+    
+    
+    my $latesttecfile = run_command("ls -t1r $tecfile_basename*.plt | tail -1");
+    $latesttecfile =~ s/-P[0-9]+/-P\*/;
+    
+    my $local_results_dir = get_results_dir();
+    my $tecfile = "$local_results_dir\/$latesttecfile \&";
+    print_var("tecplot: ",$tecfile);
+    safe_chdir($testcases_dir);
+    system("tec360 $tecfile\n");
 }
+
+#==========================================================================
 
 sub open_interactive_file()
 {
@@ -487,6 +489,7 @@ sub open_interactive_file()
     }
 }
 
+#==========================================================================
 
 sub remote_sync()
 {
@@ -697,12 +700,16 @@ sub cat()
         system("cat $globname > $catname");
         system("rm $globname");
     }
+    $done_cat = 1;
 }
 
 #==========================================================================
 
 sub merge() 
 {
+    if (!$done_cat) {
+        cat();
+    }
     use Cwd;
     use File::Find;
     
@@ -835,6 +842,31 @@ sub get_time_from_filename($)
 
 #==========================================================================
 
+sub prepare_restart()
+{
+    my $results_dir = get_results_dir();
+    safe_chdir($results_dir);
+    my $working_dir = get_working_dir();
+
+    my $latestCFmesh = run_command("ls -t1r *.CFmesh | tail -1");
+    chomp $latestCFmesh;
+
+    my $CFmeshFileName = get_parameter_from_cfcase("Simulator.SubSystem.CFmeshFileReader.Data.FileName");
+    print my_colored("Copying $latestCFmesh to $cases_dir\/$CFmeshFileName \n",$DEBUGCOLOR);
+    safe_copy($latestCFmesh,"$working_dir\/$CFmeshFileName");
+}
+
+#==========================================================================
+
+sub get_cases_dir() 
+{
+    if (pref('cfcase') =~ m:(.*)/[\w\-]+\.CFcase$:) {
+        $cases_dir = $1;
+    }
+    return $cases_dir;
+}
+#==========================================================================
+
 sub setup() 
 {
     $user_pref{'cfcase'}[$val]=File::Spec->rel2abs($user_pref{'cfcase'}[$val]);
@@ -844,7 +876,7 @@ sub setup()
 # Main execution
 #==========================================================================
 
-print "COOLFluiD Setup a run to use with coolfluid-run \n";
+print "COOLFluiD interface script \n";
 
 parse_config_file($config_file);
 parse_commandline();
