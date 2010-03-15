@@ -444,7 +444,7 @@ sub compile()
         my $build_dir = "$home/workspace/coolfluid/builds/$arch/$user_pref{'build'}[$val]";
         safe_chdir($build_dir);
         my $output;
-        $output = run_command_or_die("make $user_pref{'makeopts'}[$val] $user_pref{'mpi_np'}[$val]");
+        $output = run_command_or_die("make $user_pref{'makeopts'}[$val] -j$user_pref{'mpi_np'}[$val]");
         print my_colored("coolfluid compiled \n",$HEADINGCOLOR);
     }
 }
