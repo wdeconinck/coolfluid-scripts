@@ -47,6 +47,20 @@ my $done_cat = 0;
 #==========================================================================
 # Actions options
 #==========================================================================
+
+#================================================= saved options
+
+
+#=================================================== CLI options
+my %options = (
+    "mpi-flags"         => "",
+    "infiniband"        => 0,
+    "notify"            => 0,
+    "runbg"             => 0,
+    "walltime"          => "48:00:00",
+    "no-output"         => 0,
+);
+
 my $opt_help          = 0;
 my $opt_dryrun       = 0;
 my $opt_inter         = 0;
@@ -147,6 +161,11 @@ sub parse_commandline() # Parse command line
         'remoteconvergence'     => sub { $actionlist{'remoteconvergence'}[$act]='on'; },
         'residual'              => sub { $actionlist{'residual'}[$act]='on'; },
         'remote'                => sub { $user_pref{"remote"}[$val] = "$_[1]"; },
+        'optmpiflags=s'         => sub { $options{'mpi-flags'} = "$_[1]";},
+        'bg'                    => sub { $options{'runbg'} = 1;},
+        'ib'                    => sub { $options{'infiniband'} = 1;},
+        'walltime'              => sub { $options{'walltime'} = 1;},
+        'no-output'             => sub { $options{'no-output'} = 1;},
         'dryrun'                => \$opt_dryrun,
     );
     
@@ -381,14 +400,31 @@ sub pref($)
 
 #==========================================================================
 
+sub option($)
+{
+    my ($var) = @_;
+    return $option{$var};
+}
+
+#==========================================================================
+
 sub run()
 {
         get_executable_from_build();
         safe_chdir(get_results_dir());
         my $command = "$coolfluid_executable --conf $coolfluid_conf --scase ".pref('cfcase');
-        if (pref('mpi_np') > 1) {
-            $command = "mpirun -np ".pref('mpi_np')." $command";
+
+        
+        if (option('no-output')) {
+            $command = "$command \> /dev/null";  #> /dev/null 2>&1 &
         }
+        if (option('runbg')) {
+            $command = "$command \&";  
+        }
+        if (pref('mpi_np') > 1) {
+            $command = "mpirun -np ".pref('mpi_np')." ".option('mpi-flags')." $command";
+        }
+                
         run_command_or_die("$command");
 
 }
@@ -412,11 +448,11 @@ sub config()
 sub get_executable_from_build()
 {
     my $opt_build = pref("build");
-    if ($opt_build =~ m/optim/ || $opt_build =~ m/debug/ ) {
+    if ($opt_build =~ m/(debug|optim|release)/ ) {
         $coolfluid_executable = "$home/workspace/coolfluid/builds/$arch/$opt_build/src/Solver/coolfluid-solver";
         $coolfluid_conf       = "$home/workspace/coolfluid/builds/$arch/$opt_build/src/Solver/coolfluid-solver.xml";
     }
-    elsif ($opt_build =~ m/RelWithDebInfo/ || $opt_build =~ m/Debug/) {
+    elsif ($opt_build =~ m/(RelWithDebInfo|Debug)/ ) {
         $coolfluid_executable = "$home/workspace/coolfluid/builds/$arch/xcode/src/Solver/$opt_build/coolfluid-solver";
         $coolfluid_conf       = "$home/workspace/coolfluid/builds/$arch/xcode/src/Solver/coolfluid-solver.xml";
     }
@@ -937,6 +973,8 @@ sub submit()
     my $opt_walltime="48:00:00";
     my $opt_notify = 1;
     my $opt_infiniband = 1;
+    my $opt_mpi_np = pref('mpi_np');
+    my $opt_cfcase = pref('cfcase');
     
     
     if ($opt_notify) {
@@ -977,8 +1015,7 @@ ZZZ
 cd \$PBS_O_WORKDIR
 
 # EXECUTION COMMAND; -np = nodes*ppn
-coolfluid --run --no-output --np=$opt_mpi_np --optmpiflags="-hostfile \$PBS_NODE
-FILE" --cfcase=$opt_cfcase
+coolfluid --run --no-output --np=$opt_mpi_np --optmpiflags="-hostfile \$PBS_NODEFILE" --cfcase=$opt_cfcase
 ZZZ
     close (MYFILE);
 
@@ -997,20 +1034,15 @@ ZZZ
          $opt_notify = 0;
     }
 
-    if(!($opt_dryrun)) {
-        safe_chdir("$testcases_dir\/coolfluidlogs");
-        $lastJobID = run_command("qsub submitjob.sh");
-        print "last submitted job ID = $lastJobID \n";
-        if ($lastJobID =~ m/([0-9]+)\../) {
-            $lastJobID = $1;
-            #$user_pref{'lastJobID'}=$lastJobID;
-            
-            #change_config("lastJobID",$lastJobID);
-            print "jobID = $lastJobID \n";
-        }
+    $lastJobID = run_command("qsub submitjob.sh");
+    print "last submitted job ID = $lastJobID \n";
+    if ($lastJobID =~ m/([0-9]+)\../) {
+        $lastJobID = $1;
+        #$user_pref{'lastJobID'}=$lastJobID;
         
-    }
-    
+        #change_config("lastJobID",$lastJobID);
+        print "jobID = $lastJobID \n";
+    }    
 }
 
 #==========================================================================
