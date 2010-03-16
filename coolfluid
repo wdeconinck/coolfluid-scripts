@@ -670,26 +670,6 @@ sub plot_residual()
 
 }
 
-#==========================================================================
-
-sub submit_job() {
-    open (MYFILE, '>submitjob.sh');
-    print MYFILE <<ZZZ;
-#!/bin/bash
-# MOAB/Torque submission script for SciNet GPC (ethernet)
-#
-#PBS -l nodes=2:ppn=8,walltime=1:00:00
-#PBS -N test
-
-# DIRECTORY TO RUN - $PBS_O_WORKDIR is directory job was submitted from
-cd $PBS_O_WORKDIR
-
-# EXECUTION COMMAND; -np = nodes*ppn
-mpirun -np 16 -hostfile $PBS_NODEFILE ./a.out
-ZZZ
-close (MYFILE);
-
-}
 
 #==========================================================================
 
@@ -746,16 +726,28 @@ sub cat()
     
     find(sub {push @files, $File::Find::name if(/$basename-P0.*/);} ,"$dir"); #custom subroutine find, parse $dir
 
-    foreach (@files) {
-        print "$_";
-        my $catname = $_;
-        my $globname = $_;
-        $globname =~ s/-P0/-P\*/;
-        $catname =~ s/-P0//;
-        system("cat $globname > $catname");
-        system("rm $globname");
+
+    $cnt = @files;
+    print "$cnt files have to be merged. Are you sure? (y/n):  ";
+    $sure = <>;
+    if ($sure =~ m/y/i) {
+        $i=0;
+        my $catname = "$basename-merged-time-$interval.plt";
+        system("echo '' > $catname\n");
+        foreach (@files) {
+            print_progress($i,$cnt);
+            my $catname = $_;
+            my $globname = $_;
+            $globname =~ s/-P0/-P\*/;
+            $catname =~ s/-P0//;
+            system("cat $globname > $catname");
+            system("rm $globname");
+            $i++;
+        }
+        $done_cat = 1;
+    } else {
+        print my_colored("Action cat aborted\n",$ERRORCOLOR);
     }
-    $done_cat = 1;
 }
 
 #==========================================================================
@@ -763,6 +755,7 @@ sub cat()
 sub merge() 
 {
     if (!$done_cat) {
+        print my_colored("Action: cat\n",$ERRORCOLOR);
         cat();
     }
     use Cwd;
@@ -795,6 +788,11 @@ sub merge_interval()
 {
     use Cwd;
     use File::Find;
+    
+    if (!$done_cat) {
+        print my_colored("Action: cat\n",$ERRORCOLOR);
+        cat();
+    }
     
     chdir(get_results_dir());
     my $dir = getcwd;
@@ -829,35 +827,47 @@ sub merge_interval()
         }
     }
         
-    # Total from which percentage will be calculated
+        
     $cnt = @files;
-
-    $|=1;
-    $i=0;
-
-    my $catname = "$basename-merged-time-$interval.plt";
-    system("echo '' > $catname\n");
-    foreach (@files) {
-        # Calculate Percentage
-    	$percent = ($i/$cnt)*100;
-    	$left = ($cnt - $i);	
-
-        # Print Progress
-    	for($k=0;$k<$percent;$k=$k+5)
-    	{
-    		print "|";						
-    	}
-    	print " <-- $percent% Complete ($left left) --> ";
-
-        # Goto the start of the line
-    	print "\r";
-        system("cat $_ >> $catname\n");
-        # system("rm $globname");
-        $i++;
+    
+    print "$cnt files have to be merged. Are you sure? (y/n):  ";
+    $sure = <>;
+    if ($sure =~ m/y/i) {
+        $i=0;
+        my $catname = "$basename-merged-time-$interval.plt";
+        system("echo '' > $catname\n");
+        foreach (@files) {
+            print_progress($i,$cnt);
+            system("cat $_ >> $catname\n");
+            $i++;
+        }
+    } else {
+        print my_colored("Action merge-interval aborted\n",$ERRORCOLOR);
     }
-    print ">>>>>>>>>>>>---------100% Complete---------<<<<<<<<<<<<\n";
+}
+
+#==========================================================================
+
+sub print_progress()
+{
+    my($index, $count) = @_;
+    # Calculate Percentage
+	$percent = ($index/$count)*100;
+	$left = ($count - $index);	
+
+    # Print Progress
+	for($k=0;$k<$percent;$k=$k+5)
+	{
+		print "|";						
+	}
+	print " <-- $percent% Complete ($left left) --> ";
+
+    # Goto the start of the line
+	print "\r";
     
-    
+    if ($index+1 >= $count){
+        print ">>>>>>>>>>>>-------------100% Complete-------------<<<<<<<<<<<<\n";
+    }
 }
 
 #==========================================================================
