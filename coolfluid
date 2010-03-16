@@ -61,27 +61,60 @@ my $val = 1;
 my $act = 0;
 my $pri = 1;
 my $fnc = 2;
-my %actionlist = (              # action   priority    function
+my %actionlist = ();          # action   priority    function
+my %basicactionlist = (       # action   priority    function
     "config"                => ['off', $priority++,  \&config                   ],
     "show-options"          => ['off', $priority++,  \&show_options             ],
     "restart"               => ['off', $priority++,  \&prepare_restart          ],
     "run"                   => ['off', $priority++,  \&run                      ],
-    "edit"                  => ['off', $priority++,  \&edit                     ],
     "clean"                 => ['off', $priority++,  \&clean                    ],
     "results"               => ['off', $priority++,  \&results                  ],
     "plot"                  => ['off', $priority++,  \&plot                     ],
     "compile"               => ['off', $priority++,  \&compile                  ],
-    "remotesync"            => ['off', $priority++,  \&remotesync               ],
-    "remoteconvergence"     => ['off', $priority++,  \&remoteconvergence        ],
-    "inter"                 => ['off', $priority++,  \&open_interactive_file    ],
     "cat"                   => ['off', $priority++,  \&cat                      ],
     "merge"                 => ['off', $priority++,  \&merge                    ],
     "merge-interval"        => ['off', $priority++,  \&merge_interval           ],
-    "edit"                  => ['off', $priority++,  \&open_cfcase              ],
     "residual"              => ['off', $priority++,  \&plot_residual            ],
-    "upload"                => ['off', $priority++,  \&sync_working_dir         ],
-    "submit"                => ['off', $priority++,  \&submit                   ],
 );
+if (is_mac()) 
+{
+    %actionlist = (              # action   priority    function
+        "inter"                 => ['off', $priority++,  \&open_interactive_file    ],
+        "edit"                  => ['off', $priority++,  \&open_cfcase              ],
+        "upload"                => ['off', $priority++,  \&sync_working_dir         ],
+    );
+    
+}
+if (is_scinet())
+{
+    %actionlist = (              # action   priority    function
+        "submit"                => ['off', $priority++,  \&submit                   ],
+    );
+}
+
+%actionlist = (%basicactionlist, %actionlist);
+
+# my %actionlist = (              # action   priority    function
+#     "config"                => ['off', $priority++,  \&config                   ],
+#     "show-options"          => ['off', $priority++,  \&show_options             ],
+#     "restart"               => ['off', $priority++,  \&prepare_restart          ],
+#     "run"                   => ['off', $priority++,  \&run                      ],
+#     "edit"                  => ['off', $priority++,  \&edit                     ],
+#     "clean"                 => ['off', $priority++,  \&clean                    ],
+#     "results"               => ['off', $priority++,  \&results                  ],
+#     "plot"                  => ['off', $priority++,  \&plot                     ],
+#     "compile"               => ['off', $priority++,  \&compile                  ],
+#     "remotesync"            => ['off', $priority++,  \&remotesync               ],
+#     "remoteconvergence"     => ['off', $priority++,  \&remoteconvergence        ],
+#     "inter"                 => ['off', $priority++,  \&open_interactive_file    ],
+#     "cat"                   => ['off', $priority++,  \&cat                      ],
+#     "merge"                 => ['off', $priority++,  \&merge                    ],
+#     "merge-interval"        => ['off', $priority++,  \&merge_interval           ],
+#     "edit"                  => ['off', $priority++,  \&open_cfcase              ],
+#     "residual"              => ['off', $priority++,  \&plot_residual            ],
+#     "upload"                => ['off', $priority++,  \&sync_working_dir         ],
+#     "submit"                => ['off', $priority++,  \&submit                   ],
+# );
 
 #==========================================================================
 # Command Line
@@ -121,7 +154,6 @@ sub parse_commandline() # Parse command line
     if ($opt_help != 0)
     {
       print <<ZZZ;
-setup-coolfluid : Configures COOLFluiD run
 options:
         --np=             Setup number of processors to use
         --cfcase=         Setup the CFcase file location to use
@@ -129,17 +161,24 @@ options:
         --makeopts=       Options for compiling
 actions:
         --help            Show this help.
-        --show-options    Show all options
-        --dryrun          Don't change any configuration
-        --run             Run coolfluid-solver with the configurations
-        --config          Change configuration permanently
-        --edit            Open the CFcase file
-        --clean           clean log files from run dir $run_dir
-        --results         Open the results dir
-        --plot            Plot results with tecplot
-        --remotesync      Preplot and synchronize results dir
-        --remoteconvergence get en plot convergence
 ZZZ
+     foreach $action (keys %actionlist) {
+        print <<ZZZ;
+        --$action
+ZZZ
+     }
+     
+        # --show-options    Show all options
+        # --dryrun          Don't change any configuration
+        # --run             Run coolfluid-solver with the configurations
+        # --config          Change configuration permanently
+        # --edit            Open the CFcase file
+        # --clean           clean log files from run dir $run_dir
+        # --results         Open the results dir
+        # --plot            Plot results with tecplot
+        # --remotesync      Preplot and synchronize results dir
+        # --remoteconvergence get en plot convergence
+
     exit(0);
     }
 }
@@ -246,6 +285,20 @@ sub is_mac()
     my $arch = run_command($args);
     chomp($arch);
     if ($arch =~ Darwin) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+#==========================================================================
+
+sub is_scinet()
+{
+    my $args="hostname";
+    my $hostname = run_command($args);
+    chomp($hostname);
+    if ($hostname =~ m/(gpc|scinet)/i){
         return 1;
     } else {
         return 0;
@@ -786,14 +839,15 @@ sub merge_interval()
     system("echo '' > $catname\n");
     foreach (@files) {
         # Calculate Percentage
-    	$percent = ($i/$cnt)*100;		
+    	$percent = ($i/$cnt)*100;
+    	$left = ($cnt - $i);	
 
         # Print Progress
     	for($k=0;$k<$percent;$k=$k+5)
     	{
     		print "|";						
     	}
-    	print " <-- $percent% Complete --> ";
+    	print " <-- $percent% Complete ($left left) --> ";
 
         # Goto the start of the line
     	print "\r";
