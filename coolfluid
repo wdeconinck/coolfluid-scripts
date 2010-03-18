@@ -777,8 +777,6 @@ sub cat()
         $sure = <>;
         if ($sure =~ m/y/i) {
             $i=0;
-            my $catname = "$basename-merged-time-$interval.plt";
-            system("echo '' > $catname\n");
             foreach (@files) {
                 print_progress($i,$cnt);
                 my $catname = $_;
