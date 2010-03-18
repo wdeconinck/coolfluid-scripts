@@ -32,7 +32,7 @@ my $WARNCOLOR = "bold yellow";
 my $home = $ENV{HOME};
 my $user = $ENV{USER};
 my $arch = get_arch();
-my $this_filename = "$home/local/bin/coolfluid";
+my $this_filename = "$home/local/scripts/coolfluid";
 my $run_dir = "$home/workspace/testcases";
 my $coolfluid_executable = "";
 my $coolfluid_conf       = "";
@@ -43,6 +43,7 @@ my $remote_server = "login.scinet.utoronto.ca";
 my $port = "2200";
 my $config_file = "$home/local/scripts/.coolfluid-configuration";
 my $done_cat = 0;
+my $setup_xcode_template = "$home/local/scripts/.setup-xcode";
 
 #==========================================================================
 # Actions options
@@ -79,6 +80,7 @@ my %actionlist = ();          # action   priority    function
 my %basicactionlist = (       # action   priority    function
     "config"                => ['off', $priority++,  \&config                   ],
     "show-options"          => ['off', $priority++,  \&show_options             ],
+    "setup-xcode"           => ['off', $priority++,  \&setup_xcode              ],
     "restart"               => ['off', $priority++,  \&prepare_restart          ],
     "run"                   => ['off', $priority++,  \&run                      ],
     "clean"                 => ['off', $priority++,  \&clean                    ],
@@ -138,6 +140,7 @@ sub parse_commandline() # Parse command line
 {
     $opt_help=1 unless GetOptions (
         'help'                  => \$opt_help,
+        'setup-xcode'           => sub { $actionlist{'setup-xcode'}[$act]='on';},
         'np=s'                  => sub { $user_pref{"mpi_np"}[$val] = "$_[1]"; },
         'cfcase=s'              => sub { $user_pref{"cfcase"}[$val] = "$_[1]"; },
         'build=s'               => sub { $user_pref{"build"}[$val] = "$_[1]"; },
@@ -552,15 +555,20 @@ sub plot()
     my $tecfile_basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
     $tecfile_basename =~ s/\.plt//;
     
-    
-    my $latesttecfile = run_command("ls -t1r $tecfile_basename*.plt | tail -1");
-    $latesttecfile =~ s/-P[0-9]+/-P\*/;
-    
-    my $local_results_dir = get_results_dir();
-    my $tecfile = "$local_results_dir\/$latesttecfile \&";
-    print_var("tecplot: ",$tecfile);
-    safe_chdir($testcases_dir);
-    system("tec360 $tecfile\n");
+    my $with_time = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.AppendTime");
+    if ($with_time eq "true") {
+        plot_latest();
+    } else {
+        my $latesttecfile = run_command("ls -t1r $tecfile_basename*.plt | tail -1");
+        $latesttecfile =~ s/-P[0-9]+/-P\*/;
+
+        my $local_results_dir = get_results_dir();
+        my $tecfile = "$local_results_dir\/$latesttecfile \&";
+        print_var("tecplot: ",$tecfile);
+        safe_chdir($testcases_dir);
+        system("tec360 $tecfile\n");
+    }
+
 }
 
 #==========================================================================
@@ -764,26 +772,31 @@ sub cat()
 
 
     $cnt = @files;
-    print "$cnt files have to be merged. Are you sure? (y/n):  ";
-    $sure = <>;
-    if ($sure =~ m/y/i) {
-        $i=0;
-        my $catname = "$basename-merged-time-$interval.plt";
-        system("echo '' > $catname\n");
-        foreach (@files) {
-            print_progress($i,$cnt);
-            my $catname = $_;
-            my $globname = $_;
-            $globname =~ s/-P0/-P\*/;
-            $catname =~ s/-P0//;
-            system("cat $globname > $catname");
-            system("rm $globname");
-            $i++;
+    if ($cnt != 0) {
+        print "$cnt files have to be merged. Are you sure? (y/n):  ";
+        $sure = <>;
+        if ($sure =~ m/y/i) {
+            $i=0;
+            my $catname = "$basename-merged-time-$interval.plt";
+            system("echo '' > $catname\n");
+            foreach (@files) {
+                print_progress($i,$cnt);
+                my $catname = $_;
+                my $globname = $_;
+                $globname =~ s/-P0/-P\*/;
+                $catname =~ s/-P0//;
+                system("cat $globname > $catname");
+                system("rm $globname");
+                $i++;
+            }
+            $done_cat = 1;
+        } else {
+            print my_colored("Action cat aborted\n",$ERRORCOLOR);
         }
-        $done_cat = 1;
     } else {
-        print my_colored("Action cat aborted\n",$ERRORCOLOR);
+        print my_colored("No files to be merged\n",$ERRORCOLOR);
     }
+
 }
 
 #==========================================================================
@@ -880,6 +893,61 @@ sub merge_interval()
     } else {
         print my_colored("Action merge-interval aborted\n",$ERRORCOLOR);
     }
+}
+
+
+#==========================================================================
+
+sub plot_latest() 
+{
+    use Cwd;
+    use File::Find;
+    
+    if (!$done_cat) {
+        print my_colored("Action: cat\n",$ERRORCOLOR);
+        cat();
+    }
+    
+    chdir(get_results_dir());
+    my $dir = getcwd;
+    
+    my $basename = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.FileName");
+    $basename =~ s/\.plt//;
+    
+    my @files = (); 
+    my %timeHash = ();
+    find(\&find_files,"$dir"); #custom subroutine find, parse $dir
+
+    # following gets called recursively for each file in $dir, check $_ to see if you want the file!
+    sub find_files()
+    {
+        if ($_ =~ m/time_([0-9]+)_?([0-9]+)?_?(e?)(-?)([0-9]+)?(.*\.plt)$/) {
+            $time = get_time_from_filename($_);
+            $timeHash{$time} = $_;
+
+        }
+    }
+        
+    # sort and select timeHash
+    my $latesttecfile = "";
+    foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
+        $latesttecfile = $timeHash{$time};
+    }
+    
+    if (!($latesttecfile =~ m/-bin\.plt/)) {
+        run_command("preplot $latesttecfile latest-bin.plt");
+    } else {
+        run_command("cp $latesttecfile latest-bin.plt");
+    }
+    
+    my $local_results_dir = get_results_dir();
+    my $tecfile = "$local_results_dir\/latest-bin.plt \&";
+    print_var("tecplot: ",$tecfile);
+    safe_chdir($testcases_dir);
+    system("tec360 $tecfile\n");
+    
+        
+    
 }
 
 #==========================================================================
@@ -1053,6 +1121,31 @@ ZZZ
         #change_config("lastJobID",$lastJobID);
         print "jobID = $lastJobID \n";
     }    
+}
+
+#==========================================================================
+
+sub setup_xcode() 
+{
+    my $cfcase = pref('cfcase');
+    my $resultsdir = get_results_dir();
+    my $newfile = "$home/local/scripts/setup-xcode";
+    safe_copy($setup_xcode_template,$newfile);
+    open(OUT, ">$newfile") or die ("Error opening config file $newfile !\n");
+    open(IN,  "<$setup_xcode_template") or die ("Error opening config file $setup_xcode_template.orig !\n");
+    while (<IN>) {
+    chomp;
+    s/!!!cfcasefile!!!/$cfcase/g;
+    s/!!!results_dir!!!/$resultsdir/g;
+    #print "$_\n";
+    print OUT "$_\n";
+    }
+    print my_colored("Setup script for xcode prepared\n",$DEBUGCOLOR);
+    close IN;
+    close OUT;
+    run_command("chmod 755 $newfile");
+    run_command("$newfile");
+    
 }
 
 #==========================================================================
