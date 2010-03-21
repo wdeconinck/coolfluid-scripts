@@ -60,6 +60,7 @@ my %options = (
     "runbg"             => 0,
     "walltime"          => "48:00:00",
     "no-output"         => 0,
+    "interval"          => 0,
 );
 
 my $opt_help          = 0;
@@ -160,7 +161,7 @@ sub parse_commandline() # Parse command line
         'inter'                 => sub { $actionlist{'inter'}[$act]='on'; },
         'cat'                   => sub { $actionlist{'cat'}[$act]='on'; },
         'merge'                 => sub { $actionlist{'merge'}[$act]='on'; },
-        'merge-interval=s'      => sub { $actionlist{'merge-interval'}[$act]='on'; $user_pref{"interval"}[$val] = "$_[1]"; },
+        'merge-interval=s'      => sub { $actionlist{'merge-interval'}[$act]='on'; $options{"interval"}[$val] = "$_[1]"; },
         'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
         'remotesync'            => sub { $actionlist{'remotesync'}[$act]='on'; },
         'remoteconvergence'     => sub { $actionlist{'remoteconvergence'}[$act]='on'; },
@@ -794,9 +795,7 @@ sub merge()
     
     my $merge_time = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.AppendTime");
     if ($merge_time eq "true") {
-        my $catname = "$basename-merged-time.plt";
-        my $globname = "$basename-time_*.plt";
-        run_command_or_die("cat $globname > $catname");
+        merge_interval();
     }
     
     my $merge_iter = get_parameter_from_cfcase("Simulator.SubSystem.Tecplot.AppendIter");
@@ -839,18 +838,25 @@ sub merge_interval()
     
         
     # get the selection
-    my $interval = pref('interval');
-    my $tol = 1e-6;
-    # sort and select timeHash
-    my $count = 0;
-    foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
-        if ($count*$interval-$tol <= $time && ($count+1)*$interval > $time) {
+    my $interval = option('interval');
+    if ($interval > 0) {
+        my $tol = 1e-6;
+        # sort and select timeHash
+        my $count = 0;
+        foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
+            if ($count*$interval-$tol <= $time && ($count+1)*$interval > $time) {
+                push @files , $timeHash{$time};
+                $count++;
+            }
+        }
+    } else { # take everything
+        foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
             push @files , $timeHash{$time};
             $count++;
-        }
+        }        
+        $interval = "all";
     }
-        
-        
+
     $cnt = @files;
     
     print "$cnt/$matchingfilescount files have to be merged. Are you sure? (y/n/show):  ";
