@@ -91,6 +91,7 @@ my %basicactionlist = (       # action   priority    function
     "merge"                 => ['off', $priority++,  \&merge                    ],
     "merge-interval"        => ['off', $priority++,  \&merge_interval           ],
     "residual"              => ['off', $priority++,  \&plot_residual            ],
+    "track"                 => ['off', $priority++,  \&track                    ],
 );
 if (is_mac()) 
 {
@@ -151,6 +152,7 @@ sub parse_commandline() # Parse command line
         'restart'               => sub { $actionlist{'restart'}[$act]='on'; },
         'config'                => sub { $actionlist{'config'}[$act]='on'; },
         'edit'                  => sub { $actionlist{'edit'}[$act]='on'; },
+        'track'                 => sub { $actionlist{'track'}[$act]='on'; },
         'clean'                 => sub { $actionlist{'clean'}[$act]='on'; },
         'results'               => sub { $actionlist{'results'}[$act]='on'; },
         'compile'               => sub { $actionlist{'compile'}[$act]='on'; },
@@ -849,26 +851,24 @@ sub merge_interval()
     
     my @files = (); 
     my %timeHash = ();
-    find(\&find_files,"$dir"); #custom subroutine find, parse $dir
-
-    # following gets called recursively for each file in $dir, check $_ to see if you want the file!
-    sub find_files()
-    {
-        if ($_ =~ m/time_([0-9]+)_?([0-9]+)?_?(e?)(-?)([0-9]+)?(.*\.plt)$/) {
+    my $matchingfilescount = 0;
+    
+    find( sub {
+        if ($_ =~ m/$basename-time_([0-9]+)_?([0-9]+)?_?(e?)(-?)([0-9]+)?(.*\.plt)$/) {
             $time = get_time_from_filename($_);
             $timeHash{$time} = $_;
-
+            $matchingfilescount++;
         }
-    }
+    },"$dir"); #custom subroutine find, parse $dir
     
-    
+        
     # get the selection
     my $interval = pref('interval');
-    
+    my $tol = 1e-6;
     # sort and select timeHash
     my $count = 0;
     foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
-        if ($count*$interval <= $time && ($count+1)*$interval > $time) {
+        if ($count*$interval-$tol <= $time && ($count+1)*$interval > $time) {
             push @files , $timeHash{$time};
             $count++;
         }
@@ -877,8 +877,16 @@ sub merge_interval()
         
     $cnt = @files;
     
-    print "$cnt files have to be merged. Are you sure? (y/n):  ";
+    print "$cnt/$matchingfilescount files have to be merged. Are you sure? (y/n/show):  ";
     $sure = <>;
+    if ($sure =~ m/s/i) {
+        foreach (@files) {
+            print "$_\n";
+        }
+        print "$cnt/$matchingfilescount files have to be merged. Are you sure? (y/n):  ";
+        $sure = <>;
+    }
+
     if ($sure =~ m/y/i) {
         $i=0;
         my $catname = "$basename-merged-time-$interval.plt";
@@ -1144,6 +1152,14 @@ sub setup_xcode()
     run_command("chmod 755 $newfile");
     run_command("$newfile");
     
+}
+
+#==========================================================================
+
+sub track() 
+{
+    chdir(get_results_dir());
+    system("tail -f P0-output.log");
 }
 
 #==========================================================================
