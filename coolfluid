@@ -340,28 +340,6 @@ sub print_var($$) # create a recursive dir path
 
 #==========================================================================
 
-sub change_config($$)
-{
-    my ($var_str,$value)=@_;
-    
-    open (IN, "+<$config_file") or die ("file $config_file not found\n");
-
-    @file = <IN>;
-
-    seek IN,0,0;
-
-    foreach $file (@file){
-    $file =~ s/^\s*$var_str\s*=\s*\".*\"/$var_str = \"$value\"/g;
-    print IN $file;
-    }
-    
-    close IN;
-    
-}
-
-
-#==========================================================================
-
 sub parse_config_file($) # parse the config file to get the user overiding options
 {
     my ($filename)=@_;
@@ -956,25 +934,38 @@ sub plot_latest()
 
 #==========================================================================
 
-sub print_progress()
+sub print_progress($$)
 {
+    my $progressbarlength = 50;
+    $| = 1;
     my($index, $count) = @_;
     # Calculate Percentage
-	$percent = ($index/$count)*100;
+	$percent = int($index/$count*100);
 	$left = ($count - $index);	
-
-    # Print Progress
-	for($k=0;$k<$percent;$k=$k+5)
-	{
-		print "|";						
-	}
-	print " <-- $percent% Complete ($left left) --> ";
-
+    # Print Progress outline
     # Goto the start of the line
-	print "\r";
-    
-    if ($index+1 >= $count){
-        print ">>>>>>>>>>>>-------------100% Complete-------------<<<<<<<<<<<<\n";
+    # print "\r";
+    # for($k=0; k<27+$progressbarlength; $k++) {
+    #     print " ";
+    # }
+	print "\r|=";
+    my $pos = 0;
+    my $amount = int($progressbarlength/$count*$i);
+    my $rest = $progressbarlength-$amount;
+	for($k=0;$k<$amount;$k++)
+	{
+		print "=";
+	}
+	    print ">";
+	for($k=0;$k<$rest;$k++)
+	{
+	    print " "
+	}
+	if ($count == $index) 
+    {
+        print "| ".sprintf('%3d',$percent)."% Complete                                  \n";
+    } else {
+        print "| ".sprintf('%3d',$percent)."% Complete (".sprintf('%3d',$left)." left)  ";
     }
 }
 
