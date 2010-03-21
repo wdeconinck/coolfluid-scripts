@@ -107,6 +107,7 @@ if (is_scinet())
 {
     %actionlist = (              # action   priority    function
         "submit"                => ['off', $priority++,  \&submit                   ],
+        "preplot"               => ['off', $priority++,  \&plot_latest              ],
     );
 }
 
@@ -146,6 +147,8 @@ sub parse_commandline() # Parse command line
         'np=s'                  => sub { $user_pref{"mpi_np"}[$val] = "$_[1]"; },
         'cfcase=s'              => sub { $user_pref{"cfcase"}[$val] = "$_[1]"; },
         'build=s'               => sub { $user_pref{"build"}[$val] = "$_[1]"; },
+        'remote'                => sub { $user_pref{"remote"}[$val] = "$_[1]"; },
+        'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
         'show-options'          => sub { $actionlist{'show-options'}[$act]='on'; },
         'upload'                => sub { $actionlist{'upload'}[$act]='on'; },
         'run'                   => sub { $actionlist{'run'}[$act]='on'; },
@@ -162,16 +165,15 @@ sub parse_commandline() # Parse command line
         'cat'                   => sub { $actionlist{'cat'}[$act]='on'; },
         'merge'                 => sub { $actionlist{'merge'}[$act]='on'; },
         'merge-interval=s'      => sub { $actionlist{'merge-interval'}[$act]='on'; $options{"interval"}[$val] = "$_[1]"; },
-        'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
         'remotesync'            => sub { $actionlist{'remotesync'}[$act]='on'; },
         'remoteconvergence'     => sub { $actionlist{'remoteconvergence'}[$act]='on'; },
         'residual'              => sub { $actionlist{'residual'}[$act]='on'; },
-        'remote'                => sub { $user_pref{"remote"}[$val] = "$_[1]"; },
-        'optmpiflags=s'         => sub { $options{'mpi-flags'} = "$_[1]";},
-        'bg'                    => sub { $options{'runbg'} = 1;},
-        'ib'                    => sub { $options{'infiniband'} = 1;},
-        'walltime=s'            => sub { $options{'walltime'} = "$_[1]";},
-        'no-output'             => sub { $options{'no-output'} = 1;},
+        'preplot'               => sub { $actionlist{'preplot'}[$act]='on'; },
+        'optmpiflags=s'         => sub { $options{'mpi-flags'} = "$_[1]"; },
+        'bg'                    => sub { $options{'runbg'} = 1; },
+        'ib'                    => sub { $options{'infiniband'} = 1; },
+        'walltime=s'            => sub { $options{'walltime'} = "$_[1]"; },
+        'no-output'             => sub { $options{'no-output'} = 1; },
         'dryrun'                => \$opt_dryrun,
     );
     
@@ -930,14 +932,14 @@ sub plot_latest()
         run_command("cp $latesttecfile latest-bin.plt");
     }
     
-    my $local_results_dir = get_results_dir();
-    my $tecfile = "$local_results_dir\/latest-bin.plt \&";
-    print_var("tecplot: ",$tecfile);
-    safe_chdir($testcases_dir);
-    system("tec360 $tecfile\n");
-    
-        
-    
+    if (!is_scinet()) {
+        my $local_results_dir = get_results_dir();
+        my $tecfile = "$local_results_dir\/latest-bin.plt \&";
+        print_var("tecplot: ",$tecfile);
+        safe_chdir($testcases_dir);
+        system("tec360 $tecfile\n"); 
+    }
+
 }
 
 #==========================================================================
