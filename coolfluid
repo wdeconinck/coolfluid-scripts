@@ -766,6 +766,7 @@ sub cat()
                 system("rm $globname");
                 $i++;
             }
+            print_progress($cnt,$cnt);
             $done_cat = 1;
         } else {
             print my_colored("Action cat aborted\n",$ERRORCOLOR);
@@ -878,6 +879,7 @@ sub merge_interval()
             system("cat $_ >> $catname\n");
             $i++;
         }
+        print_progress($cnt,$cnt);
     } else {
         print my_colored("Action merge-interval aborted\n",$ERRORCOLOR);
     }
