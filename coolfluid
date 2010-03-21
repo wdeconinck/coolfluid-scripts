@@ -169,7 +169,7 @@ sub parse_commandline() # Parse command line
         'optmpiflags=s'         => sub { $options{'mpi-flags'} = "$_[1]";},
         'bg'                    => sub { $options{'runbg'} = 1;},
         'ib'                    => sub { $options{'infiniband'} = 1;},
-        'walltime'              => sub { $options{'walltime'} = 1;},
+        'walltime=s'            => sub { $options{'walltime'} = "$_[1]";},
         'no-output'             => sub { $options{'no-output'} = 1;},
         'dryrun'                => \$opt_dryrun,
     );
@@ -577,17 +577,15 @@ sub plot()
 
 sub open_interactive_file()
 {
-    if ($opt_inter) {
-        my $interactive_file = get_parameter_from_cfcase("Simulator.SubSystem.InteractiveParamReader.FileName");
+    my $interactive_file = get_parameter_from_cfcase("Simulator.SubSystem.InteractiveParamReader.FileName");
          
-        if ($interactive_file =~ m/^$/) { # empty parameter ==> not found
-            print my_colored("No interactive file defined in $opt_cfcase \n",$ERRORCOLOR);
-        }
-        else { # found
-            $interactive_file = "$coolfluid_dir\/$interactive_file";
-            run_command("mate $interactive_file");
-        }        
+    if ($interactive_file =~ m/^$/) { # empty parameter ==> not found
+        print my_colored("No interactive file defined in ".pref('cfcase')."  \n",$ERRORCOLOR);
     }
+    else { # found
+        $interactive_file = "$coolfluid_dir\/$interactive_file";
+        run_command("mate $interactive_file");
+    }        
 }
 
 #==========================================================================
