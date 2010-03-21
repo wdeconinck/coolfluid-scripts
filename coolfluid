@@ -846,14 +846,14 @@ sub merge_interval()
         my $tol = 1e-6;
         # sort and select timeHash
         my $count = 0;
-        foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
+        foreach $time (sort {$a cmp $b} keys %timeHash) {
             if ($count*$interval-$tol <= $time && ($count+1)*$interval > $time) {
                 push @files , $timeHash{$time};
                 $count++;
             }
         }
     } else { # take everything
-        foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
+        foreach $time (sort {$a cmp $b} keys %timeHash) {
             push @files , $timeHash{$time};
             $count++;
         }        
@@ -919,9 +919,11 @@ sub plot_latest()
         
     # sort and select timeHash
     my $latesttecfile = "";
-    foreach $time (sort {$timeHash{$a} cmp $timeHash{$b}} keys %timeHash) {
+    my $latesttime;
+    foreach $time (sort {$a cmp $b} keys %timeHash) {
         $latesttecfile = $timeHash{$time};
-    }
+        $latesttime = $time;
+    }    
     
     if($latesttecfile =~ m/$basename-P0/) {
         my $catname = $latesttecfile;
@@ -930,13 +932,17 @@ sub plot_latest()
         $catname =~ s/-P0//;
         system("cat $globname > $catname");
         system("rm $globname");
+        $latesttecfile = $catname;
     }
         
+    
     if (!($latesttecfile =~ m/-bin\.plt/)) {
         run_command("preplot $latesttecfile latest-bin.plt");
     } else {
         run_command("cp $latesttecfile latest-bin.plt");
     }
+    
+    print my_colored("Tecplot file with time $latesttime is now available as 'latest-bin.plt'.\n",$OKCOLOR);
     
     if (!is_scinet()) {
         my $local_results_dir = get_results_dir();
