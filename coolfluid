@@ -895,11 +895,6 @@ sub plot_latest()
     use Cwd;
     use File::Find;
     
-    if (!$done_cat) {
-        print my_colored("Action: cat\n",$ERRORCOLOR);
-        cat();
-    }
-    
     chdir(get_results_dir());
     my $dir = getcwd;
     
@@ -908,16 +903,18 @@ sub plot_latest()
     
     my @files = (); 
     my %timeHash = ();
+    my %timeHashWithCat = ();
+    
     find(\&find_files,"$dir"); #custom subroutine find, parse $dir
 
     # following gets called recursively for each file in $dir, check $_ to see if you want the file!
     sub find_files()
     {
-        if ($_ =~ m/time_([0-9]+)_?([0-9]+)?_?(e?)(-?)([0-9]+)?(.*\.plt)$/) {
+        if ($_ =~ m/$basename-(P0-)?time_([0-9]+)_?([0-9]+)?_?(e?)(-?)([0-9]+)?(.*\.plt)$/) {
             $time = get_time_from_filename($_);
             $timeHash{$time} = $_;
-
         }
+
     }
         
     # sort and select timeHash
@@ -926,6 +923,15 @@ sub plot_latest()
         $latesttecfile = $timeHash{$time};
     }
     
+    if($latesttecfile =~ m/$basename-P0/) {
+        my $catname = $latesttecfile;
+        my $globname = $latesttecfile;
+        $globname =~ s/-P0/-P\*/;
+        $catname =~ s/-P0//;
+        system("cat $globname > $catname");
+        system("rm $globname");
+    }
+        
     if (!($latesttecfile =~ m/-bin\.plt/)) {
         run_command("preplot $latesttecfile latest-bin.plt");
     } else {
