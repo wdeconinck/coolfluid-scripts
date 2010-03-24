@@ -1,6 +1,8 @@
 #! /usr/bin/osascript
 
 tell application "Xcode"
+    
+    set myName to do shell script "whoami"
 	set targetProject to project of active project document
 	
 	tell targetProject
@@ -18,17 +20,17 @@ tell application "Xcode"
 		end repeat
 		
 		if mpiCoolfluidSolverFound is false then
-			set mpiCoolfluidSolver to (make new executable with properties {name:"mpi-coolfluid-solver", path:"/Users/willem/local/i386/bin/mpirun"})
+			set mpiCoolfluidSolver to (make new executable with properties {name:"mpi-coolfluid-solver", path:"/Users/" & myName & "/local/i386/bin/mpirun"})
 		end if
 		
 		tell coolfluidSolver
 		    delete launch arguments
 		    delete environment variables
 			if ((count of launch arguments) is equal to 0) then
-				make new environment variable with properties {name:"LD_LIBRARY_PATH", value:"/Users/willem/local/i386/lib", active:true}
-				make new environment variable with properties {name:"DYLD_LIBRARY_PATH", value:"/Users/willem/local/i386/lib", active:true}
+				make new environment variable with properties {name:"LD_LIBRARY_PATH", value:"/Users/" & myName & "/local/i386/lib", active:true}
+				make new environment variable with properties {name:"DYLD_LIBRARY_PATH", value:"/Users/" & myName & "/local/i386/lib", active:true}
 				
-				make new launch argument with properties {active:true, name:"--conf /Users/willem/workspace/coolfluid/builds/i386/xcode/src/Solver/coolfluid-solver.xml"}
+				make new launch argument with properties {active:true, name:"--conf " & "/Users/" & myName & "/workspace/coolfluid/builds/i386/xcode/src/Solver/coolfluid-solver.xml"}
 				make new launch argument with properties {active:true, name:"--scase !!!cfcasefile!!!"}
 			end if
 			set startup directory to "!!!results_dir!!!"
@@ -38,13 +40,13 @@ tell application "Xcode"
 		tell mpiCoolfluidSolver
 			if ((count of launch arguments) is equal to 0) then
 				make new launch argument with properties {active:true, name:"-np 2"}
-				make new launch argument with properties {active:true, name:"/Users/willem/workspace/coolfluid/builds/i386/xcode/src/Solver/RelWithDebInfo/coolfluid-solver"}
+				make new launch argument with properties {active:true, name:"/Users/" & myName & "/workspace/coolfluid/builds/i386/xcode/src/Solver/RelWithDebInfo/coolfluid-solver"}
 				
-				make new launch argument with properties {active:true, name:"--conf /Users/willem/workspace/coolfluid/builds/i386/xcode/src/Solver/coolfluid-solver.xml"}
+				make new launch argument with properties {active:true, name:"--conf " & "/Users/" & myName & "/workspace/coolfluid/builds/i386/xcode/src/Solver/coolfluid-solver.xml"}
 				make new launch argument with properties {active:true, name:"--scase !!!cfcasefile!!!"}
 				
-				make new environment variable with properties {name:"LD_LIBRARY_PATH", value:"/Users/willem/local/i386/lib", active:true}
-				make new environment variable with properties {name:"DYLD_LIBRARY_PATH", value:"/Users/willem/local/i386/lib", active:true}
+				make new environment variable with properties {name:"LD_LIBRARY_PATH", value:"/Users/" & myName & "/local/i386/lib", active:true}
+				make new environment variable with properties {name:"DYLD_LIBRARY_PATH", value:"/Users/" & myName & "/local/i386/lib", active:true}
 			end if
 			set startup directory to "!!!results_dir!!!"
 		end tell
