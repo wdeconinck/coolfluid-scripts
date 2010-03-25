@@ -44,6 +44,7 @@ my $port = "2200";
 my $config_file = "$home/local/scripts/.coolfluid-configuration";
 my $done_cat = 0;
 my $setup_xcode_template = "$home/local/scripts/.setup-xcode";
+my $script_launch_dir = run_command('pwd');
 
 #==========================================================================
 # Actions options
@@ -149,6 +150,7 @@ sub parse_commandline() # Parse command line
         'build=s'               => sub { $user_pref{"build"}[$val] = "$_[1]"; },
         'remote'                => sub { $user_pref{"remote"}[$val] = "$_[1]"; },
         'makeopts=s'            => sub { $user_pref{"makeopts"}[$val] = "\"$_[1]\""; },
+        'coolfluid-dir=s'       => sub { $user_pref{"coolfluid-dir"}[$val] = "$_[1]"; },
         'show-options'          => sub { $actionlist{'show-options'}[$act]='on'; },
         'upload'                => sub { $actionlist{'upload'}[$act]='on'; },
         'run'                   => sub { $actionlist{'run'}[$act]='on'; },
@@ -435,12 +437,12 @@ sub get_executable_from_build()
 {
     my $opt_build = pref("build");
     if ($opt_build =~ m/(debug|optim|release)/ ) {
-        $coolfluid_executable = "$home/workspace/coolfluid/builds/$arch/$opt_build/src/Solver/coolfluid-solver";
-        $coolfluid_conf       = "$home/workspace/coolfluid/builds/$arch/$opt_build/src/Solver/coolfluid-solver.xml";
+        $coolfluid_executable = "$coolfluid_dir/builds/$arch/$opt_build/src/Solver/coolfluid-solver";
+        $coolfluid_conf       = "$coolfluid_dir/builds/$arch/$opt_build/src/Solver/coolfluid-solver.xml";
     }
     elsif ($opt_build =~ m/(RelWithDebInfo|Debug)/ ) {
-        $coolfluid_executable = "$home/workspace/coolfluid/builds/$arch/xcode/src/Solver/$opt_build/coolfluid-solver";
-        $coolfluid_conf       = "$home/workspace/coolfluid/builds/$arch/xcode/src/Solver/coolfluid-solver.xml";
+        $coolfluid_executable = "$coolfluid_dir/builds/$arch/xcode/src/Solver/$opt_build/coolfluid-solver";
+        $coolfluid_conf       = "$coolfluid_dir/builds/$arch/xcode/src/Solver/coolfluid-solver.xml";
     }
     else {
         print my_colored("Could not find build $opt_build \n",$ERRORCOLOR);
@@ -523,7 +525,7 @@ sub get_parameter_from_cfcase($)
 sub compile()
 {        
     if ($opt_build == "optim" || $opt_build == "debug") {
-        my $build_dir = "$home/workspace/coolfluid/builds/$arch/$user_pref{'build'}[$val]";
+        my $build_dir = "$coolfluid_dir/builds/$arch/$user_pref{'build'}[$val]";
         safe_chdir($build_dir);
         my $output;
         $output = run_command_or_die("make $user_pref{'makeopts'}[$val] -j$user_pref{'mpi_np'}[$val]");
@@ -700,6 +702,9 @@ sub plot_residual()
 
 sub get_results_dir() {
     my $results_dir = get_parameter_from_cfcase("Simulator.Paths.ResultsDir");
+    if ($results_dir eq "./" || $results_dir eq ".") {
+        $results_dir = "../testcases/tmp";
+    }
     $results_dir="$coolfluid_dir$results_dir";
     mkpath($results_dir,1);
     return $results_dir;
@@ -1057,6 +1062,14 @@ sub get_cases_dir()
 sub setup() 
 {
     $user_pref{'cfcase'}[$val]=File::Spec->rel2abs($user_pref{'cfcase'}[$val]);
+    $coolfluid_dir = pref('coolfluid-dir');
+    if ($coolfluid_dir =~ m/\/$/)
+    {    # do nothing
+    } else {
+        $coolfluid_dir = "$coolfluid_dir/";
+    }
+    $user_pref{'coolfluid-dir'}[$val]=$coolfluid_dir;
+    
 }
 
 #==========================================================================
